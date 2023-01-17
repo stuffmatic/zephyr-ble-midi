@@ -1,0 +1,8 @@
+{
+  "files.associations": {
+    "uuid.h": "c"
+  },
+  "nrf-connect.applications": [
+    "${workspaceFolder}"
+  ]
+}

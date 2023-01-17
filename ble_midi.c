@@ -160,7 +160,7 @@ uint32_t ble_midi_out_packet_add_message(
     if (packet->size == 0)
     {
         /* Packet is empty. Create a header byte. */
-        packet->bytes[0] = 0x8 | (timestamp >> 6);
+        packet->bytes[0] = 0x80 | ((timestamp >> 6) & 0xf);
         packet->size += 1;
     }
 
