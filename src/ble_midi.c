@@ -202,7 +202,7 @@ uint32_t ble_midi_out_packet_add_message(
 
     /* write timestamp byte (TODO: Omit this (sometimes)? Not required by the spec for running status. ) */
     uint8_t timestamp_low = timestamp & 0x7f;
-    packet->bytes[packet->size] = 0x80 & timestamp_low;
+    packet->bytes[packet->size] = 0x80 | timestamp_low;
     packet->size++;
 
     /* write status byte? */

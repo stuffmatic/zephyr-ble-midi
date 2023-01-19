@@ -3,6 +3,8 @@
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
 
+#include "ble_midi.h"
+
 #define BLE_MIDI_SERVICE_UUID \
 	BT_UUID_128_ENCODE(0x03B80E5A, 0xEDE8, 0x4B33, 0xA751, 0x6CE34EC4C700)
 
@@ -58,11 +60,18 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service,
 
 static void ble_midi_tx(uint8_t *bytes, uint32_t num_bytes)
 {
-	static uint8_t payload[5] = {
-		0xb7, 0xf1, 0x8b, 0x46, 0x00
-	};
+	struct ble_midi_out_packet packet;
+	ble_midi_out_packet_reset(&packet);
+	ble_midi_out_packet_add_message(&packet, bytes, 0);
 
-	int rc = bt_gatt_notify(NULL, &ble_midi_service.attrs[1], payload, sizeof(payload));
+	printk("MIDI tx: ");
+	for (int i = 0; i < packet.size; i++)
+	{
+		printk("%02x ", packet.bytes[i]);
+	}
+	printk("\n");
+
+	int rc = bt_gatt_notify(NULL, &ble_midi_service.attrs[1], packet.bytes, packet.size);
 	printk("ble_midi_tx %d\n", rc);
 	return rc == -ENOTCONN ? 0 : rc;
 
