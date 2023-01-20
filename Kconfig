@@ -1,2 +1,5 @@
 source "Kconfig.zephyr"
 
+config BLE_MIDI_SEND_RUNNING_STATUS
+  bool ""
+	default y

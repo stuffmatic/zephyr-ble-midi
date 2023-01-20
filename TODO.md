@@ -14,7 +14,16 @@
 * tx_msg(bytes, byte count)
 * tx_sysex(bytes, byte count, start/cont/end)
 
+# ble stuff
 
-# misc
+* 2M PHY
+* LLPM
+* MTU
+* connection interval
+* enabled when subscription has started ✅
+* notify with callback
 
-* https://github.com/edvinand/custom_ncs_ble_service_sample
+# ref
+
+* https://devzone.nordicsemi.com/guides/short-range-guides/b/bluetooth-low-energy/posts/midi-over-bluetooth-le
+* https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/optimizing-ble-midi-with-regards-to-timing-1293631358

@@ -1,6 +1,7 @@
 {
   "files.associations": {
-    "uuid.h": "c"
+    "uuid.h": "c",
+    "ble_midi.h": "c"
   },
   "nrf-connect.applications": [
     "${workspaceFolder}"
