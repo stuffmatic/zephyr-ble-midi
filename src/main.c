@@ -55,8 +55,9 @@ void main(void)
 	gpio_pin_configure_dt(&led1, GPIO_OUTPUT_ACTIVE);
 	gpio_pin_set_dt(&led1, 0);
 
-	ble_midi_register_callbacks(&midi_callbacks);
+
 	uint32_t err = bt_enable(NULL);
+	ble_midi_init(&midi_callbacks);
 	int ad_err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	printk("bt_le_adv_start %d\n", ad_err);
 	__ASSERT(err == 0, "bt_enable failed");

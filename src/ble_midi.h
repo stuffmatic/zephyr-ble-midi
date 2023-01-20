@@ -19,9 +19,12 @@ struct ble_midi_callbacks {
   ble_midi_available_cb available_cb;
 };
 
-void ble_midi_register_callbacks(struct ble_midi_callbacks *callbacks);
+/**
+ * Call once.
+ */
+void ble_midi_init(struct ble_midi_callbacks *callbacks);
 
-/** 3 bytes */
+/** 3 zero padded bytes. */
 int ble_midi_tx(uint8_t* bytes);
 
 

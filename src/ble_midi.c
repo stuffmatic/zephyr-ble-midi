@@ -96,9 +96,9 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service,
 #define INTERVAL_MAX	0x6	/* 7.5 ms */
 static struct bt_le_conn_param *conn_param =
 	BT_LE_CONN_PARAM(INTERVAL_MIN, INTERVAL_MAX, 0, 36);
-static struct bt_conn_le_phy_param *phy_param = BT_CONN_LE_PHY_PARAM_2M;
+// static struct bt_conn_le_phy_param *phy_param = BT_CONN_LE_PHY_PARAM_2M;
 
-static void mtu_exchange_func(struct bt_conn *conn, uint8_t att_err,
+/* static void mtu_exchange_func(struct bt_conn *conn, uint8_t att_err,
 			  struct bt_gatt_exchange_params *params)
 {
 	struct bt_conn_info info = {0};
@@ -111,7 +111,16 @@ static void mtu_exchange_func(struct bt_conn *conn, uint8_t att_err,
 		printk("Failed to get connection info %d\n", err);
 		return;
 	}
+} */
+
+void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
+{
+	struct bt_conn_info info = {0};
+	int e = bt_conn_get_info(conn, &info);
+	printk("Updated MTU: TX: %d RX: %d bytes.\n", tx, rx);
 }
+
+static struct bt_gatt_cb gatt_callbacks = {.att_mtu_updated = mtu_updated};
 
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
@@ -121,14 +130,22 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		int e;
 		struct bt_conn_info info = {0};
 		e = bt_conn_get_info(conn, &info);
-		if (info.le.phy->rx_phy != BT_GAP_LE_PHY_2M || info.le.phy->tx_phy != BT_GAP_LE_PHY_2M) {
+		/* if (info.le.phy->rx_phy != BT_GAP_LE_PHY_2M || info.le.phy->tx_phy != BT_GAP_LE_PHY_2M) {
 			e = bt_conn_le_phy_update(conn, phy_param);
-		}
+		} */
 		if (info.le.interval != INTERVAL_MIN) {
 			e = bt_conn_le_param_update(conn, conn_param);
 		}
 
-		// err = bt_conn_le_data_len_update(conn, conn_param->);
+		/* struct bt_conn_le_data_len_param data_len = {
+			.tx_max_len = 247,
+			.tx_max_time = info.le.data_len->tx_max_time
+		};
+		if (info.le.data_len->tx_max_len != data_len.tx_max_len) {
+			e = bt_conn_le_data_len_update(conn, &data_len);
+			__ASSERT(e == 0, "");
+		} */
+
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
@@ -156,31 +173,34 @@ static void le_param_updated(struct bt_conn *conn, uint16_t interval,
 	       interval, latency, timeout);
 }
 
+/*
 static void le_phy_updated(struct bt_conn *conn,
 			   struct bt_conn_le_phy_info *param)
 {
 	printk("LE PHY updated: TX PHY %s, RX PHY %s\n",
 	       phy2str(param->tx_phy), phy2str(param->rx_phy));
-}
+} */
 
-static void le_data_length_updated(struct bt_conn *conn,
+/*static void le_data_length_updated(struct bt_conn *conn,
 				   struct bt_conn_le_data_len_info *info)
 {
 	printk("LE data len updated: TX (len: %d time: %d)"
 	       " RX (len: %d time: %d)\n", info->tx_max_len,
 	       info->tx_max_time, info->rx_max_len, info->rx_max_time);
-}
+}*/
 
 BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {
     .connected = on_connected,
     .disconnected = on_disconnected,
 		.le_param_req = le_param_req,
 		.le_param_updated = le_param_updated,
-		.le_phy_updated = le_phy_updated,
-		.le_data_len_updated = le_data_length_updated
+		// .le_phy_updated = le_phy_updated
+		// .le_data_len_updated = le_data_length_updated
 };
 
-void ble_midi_register_callbacks(struct ble_midi_callbacks *callbacks) {
+void ble_midi_init(struct ble_midi_callbacks *callbacks) {
+		bt_gatt_cb_register(&gatt_callbacks);
+
     user_callbacks.available_cb = callbacks->available_cb;
     user_callbacks.sysex_cb = callbacks->sysex_cb;
     user_callbacks.midi_message_cb = callbacks->midi_message_cb;
