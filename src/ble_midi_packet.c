@@ -22,6 +22,10 @@ if (header >= 0x80) {
 
 */
 
+uint32_t is_status_byte(uint8_t byte)
+{
+    return byte >= 0x80;
+}
 
 uint32_t is_sysex_message(uint8_t status_byte)
 {
@@ -45,6 +49,21 @@ uint32_t is_realtime_message(uint8_t status_byte)
     case 0xfc: /* Stop */
     case 0xfe: /* Active Sensing */
     case 0xff: /* System Reset */
+        return 1;
+    }
+
+    return 0;
+}
+
+uint32_t is_system_common_message(uint8_t status_byte)
+{
+    /* System common message? */
+    switch (status_byte)
+    {
+    case 0xf1: /* MIDI Time Code Quarter Frame */
+    case 0xf3: /* Song Select */
+    case 0xf2: /* Song Position Pointer */
+    case 0xf6: /* Tune request */
         return 1;
     }
 
@@ -164,8 +183,10 @@ void ble_midi_packet_parse(
 void ble_midi_packet_reset(struct ble_midi_packet *packet)
 {
     packet->size = 0;
-    packet->max_size = BLE_MIDI_PACKET_MAX_SIZE;
-    packet->running_status = 0;
+    packet->prev_timestamp = 0;
+    packet->prev_status_byte = 0;
+    packet->next_rs_message_needs_timestamp = 0;
+    packet->is_running_status = 0;
 }
 
 uint32_t ble_midi_packet_add_message(
@@ -174,93 +195,130 @@ uint32_t ble_midi_packet_add_message(
     uint16_t timestamp,
     int running_status_enabled)
 {
-    // TODO: validate data bytes
-    // TODO: only add timestamp low bits if the timestamp has changed and not running status
+    /* The following code appends a MIDI message to the BLE MIDI packet in two steps:
+       1. Compute a maximum of 5 bytes to append (packet header + message timestamp + 3 midi bytes).
+       2. Append the bytes if there is room in the packet.
+    */
 
     uint8_t status_byte = message_bytes[0];
-    uint8_t data_bytes[2] = {message_bytes[1], message_bytes[2]};
     uint8_t num_message_bytes = message_size(status_byte);
-
     if (num_message_bytes == 0)
     {
         /* Unsupported/invalid status byte */
         return 1;
     }
 
-    if (packet->size == 0)
-    {
-        /* Packet is empty. Create a header byte. */
-        packet->bytes[0] = 0x80 | ((timestamp >> 6) & 0xf);
-        packet->size += 1;
+    uint8_t data_bytes[2] = {message_bytes[1], message_bytes[2]};
+    for (int i = 0; i < num_message_bytes - 1; i++) {
+        if (is_status_byte(data_bytes[i])) {
+            /* Invalid data byte(s) */
+            return 1;
+        }
     }
 
-    uint32_t use_running_status = 0;
+    /* Use running status? */
+    uint8_t prev_status_byte = packet->prev_status_byte;
+    uint8_t next_rs_message_needs_timestamp = packet->next_rs_message_needs_timestamp;
+    uint8_t is_running_status = packet->is_running_status;
     if (is_channel_message(status_byte))
     {
         if (running_status_enabled) {
             if ((status_byte >> 4) == 0x8)
             {
-                /* This is a note off message. Represent it as a note on with velocity 0
-                to increase running status efficiency. */
+                /* This is a note off message. Represent it as a note
+                   on with velocity 0 to increase running status efficiency. */
                 status_byte = 0x90 | (status_byte & 0xf);
-                data_bytes[1] = 0;
+                data_bytes[1] = 0; /* Velocity 0 */
             }
-            if (status_byte == packet->running_status)
+            if (status_byte == prev_status_byte)
             {
-                use_running_status = 1;
+                /* Start or continue running status sequence */
+                is_running_status = 1;
             }
-            packet->running_status = status_byte;
+            else {
+                /* Cancel running status */
+                is_running_status = 0;
+            }
+            prev_status_byte = status_byte;
         }
         else
         {
-            packet->running_status = 0;
+            /* Running status is disabled. */
+            is_running_status = 0;
+            prev_status_byte = 0;
         }
     }
-    else if (!is_realtime_message(status_byte))
+    else if (is_realtime_message(status_byte) || is_system_common_message(status_byte))
     {
-        /* From the MIDI spec:
-           Running Status will be stopped when any other Status byte intervenes.
-           Real-Time messages should not affect Running Status. */
         /*
            From the BLE MIDI spec:
            System Common and System Real-Time messages do not cancel Running Status if
            interspersed between Running Status MIDI messages. However, a timestamp byte
            must precede the Running Status MIDI message that follows.
         */
-        packet->running_status = 0;
+       if (is_running_status) {
+         next_rs_message_needs_timestamp = 1;
+       }
+    }
+    else {
+        is_running_status = 0;
+        prev_status_byte = 0;
     }
 
-    uint8_t num_bytes_to_write = 1 + num_message_bytes; /* timestamp byte + message bytes */
-    if (use_running_status)
-    {
-        num_bytes_to_write -= 1; /* skip message status byte */
+    uint8_t bytes_to_append[5] = { 0, 0, 0, 0 ,0 };
+    uint8_t num_bytes_to_append = 0;
+
+    /* Add packet header byte? */
+    if (packet->size == 0) {
+        bytes_to_append[num_bytes_to_append] = 0x80 | ((timestamp >> 6) & 0xf);
+        num_bytes_to_append++;
     }
 
-    if (packet->size + num_bytes_to_write > packet->max_size)
-    {
-        /* Can't fit message in packet */
+    /* Add message timestamp? */
+    uint16_t prev_timestamp = packet->prev_timestamp;
+    int skip_msg_timestamp = is_running_status && timestamp == prev_timestamp
+                                               && !next_rs_message_needs_timestamp
+                                               && is_channel_message(status_byte);
+    if (!skip_msg_timestamp) {
+        uint8_t timestamp_low = timestamp & 0x7f;
+        bytes_to_append[num_bytes_to_append] = 0x80 | timestamp_low;
+        num_bytes_to_append++;
+    }
+
+    if (next_rs_message_needs_timestamp && is_channel_message(status_byte)) {
+        next_rs_message_needs_timestamp = 0;
+    }
+
+    /* Add status byte? */
+    int skip_status_byte = is_running_status && is_channel_message(status_byte);
+    if (!skip_status_byte) {
+        bytes_to_append[num_bytes_to_append] = status_byte;
+        num_bytes_to_append++;
+    }
+
+    /* Add data bytes */
+    uint8_t num_data_bytes = num_message_bytes - 1;
+    for (int i = 0; i < num_data_bytes; i++) {
+        bytes_to_append[num_bytes_to_append] = data_bytes[i];
+        num_bytes_to_append++;
+    }
+
+    /* Append bytes to the BLE packet */
+    if (packet->size + num_bytes_to_append <= packet->max_size) {
+        for (int i = 0; i < num_bytes_to_append; i++) {
+            packet->bytes[packet->size] = bytes_to_append[i];
+            packet->size++;
+        }
+
+        /* Update packet state */
+        packet->prev_status_byte = prev_status_byte;
+        packet->prev_timestamp = timestamp;
+        packet->next_rs_message_needs_timestamp = next_rs_message_needs_timestamp;
+        packet->is_running_status = is_running_status;
+
+        return 0;
+    } else {
+        /* The bytes to append don't fit in the packet. */
         return 1;
     }
-
-    /* write timestamp byte (TODO: Omit this (sometimes)? Not required by the spec for running status. ) */
-    uint8_t timestamp_low = timestamp & 0x7f;
-    packet->bytes[packet->size] = 0x80 | timestamp_low;
-    packet->size++;
-
-    /* write status byte? */
-    if (!use_running_status)
-    {
-        packet->bytes[packet->size] = status_byte;
-        packet->size++;
-    }
-
-    /* write data bytes */
-    for (int i = 0; i < num_message_bytes - 1; i++)
-    {
-        packet->bytes[packet->size] = data_bytes[i];
-        packet->size++;
-    }
-
-    /* Message added to packet. */
-    return 0;
 }
