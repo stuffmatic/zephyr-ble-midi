@@ -1,26 +1,4 @@
 #include "ble_midi_packet.h"
-/*
-
-byte_equals(index, value)
-byte_has_high_bit_set(index)
-
-if (header >= 0x80) {
-  if (!byte_has_high_bit_set(1) || byte_equals(1, value)) {
-
-  }
-  else {
-    Sysex start or continuation. Once a SysEx transfer has begun, only System Real-Time messages are allowed to precede its completion as follows:
-    Only status bytes allowed are
-    * timestamp byte + F0 (end of sysex)
-    * timestamp byte + system real time
-      (A System Real-Time message interrupting a yet unterminated SysEx message must be
-      preceded by its own timestamp byte)
-  }
-} else {
-  error: invalid header
-}
-
-*/
 
 uint32_t is_status_byte(uint8_t byte)
 {
@@ -154,44 +132,6 @@ uint8_t packet_header(uint16_t timestamp)
 uint8_t message_timestamp(uint16_t timestamp)
 {
 	return 0x80 | (0x7f & timestamp);
-}
-
-void ble_midi_packet_parse(
-    uint8_t *packet, uint32_t num_bytes, midi_message_cb message_cb, sysex_cb sysex_cb)
-{
-	if (num_bytes < 2)
-	{
-		/* Empty packet */
-		return;
-	}
-
-	uint8_t header = packet[0];
-	if (!(header & 0x80))
-	{
-		/* Invalid header byte */
-		return;
-	}
-	if (header & 0x40)
-	{
-		/* Warning: expected reserved byte to be zero */
-	}
-	uint8_t timestamp_high = header & 0x3f;
-
-	uint8_t second_byte = packet[1];
-	if (second_byte & 0x80)
-	{
-	}
-	else
-	{
-		/* Sysex continuation packet */
-	}
-
-	uint8_t running_status = 0;
-	uint32_t read_idx = 1;
-	while (read_idx < num_bytes)
-	{
-		break;
-	}
 }
 
 void ble_midi_packet_init(struct ble_midi_packet *packet)
@@ -409,7 +349,7 @@ int ble_midi_packet_append_sysex_msg(
 	}
 
 	/* See if there's room in the packet */
-	int num_bytes_to_append = num_bytes + 2;
+	int num_bytes_to_append = num_bytes + 2; /* +2 for timestamp bytes */
 	if (packet->size == 0)
 	{
 		num_bytes_to_append++;
