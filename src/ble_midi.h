@@ -12,11 +12,13 @@
 typedef void (*ble_midi_available_cb)(uint32_t is_available);
 typedef void (*ble_midi_message_cb)(uint8_t* bytes, uint8_t num_bytes, uint16_t timestamp);
 typedef void (*ble_midi_sysex_cb)(uint8_t* bytes, uint8_t num_bytes, uint32_t sysex_ended);
+typedef void (*ble_midi_packet_tx_cb)();
 
 struct ble_midi_callbacks {
 	ble_midi_message_cb midi_message_cb;
 	ble_midi_sysex_cb sysex_cb;
   ble_midi_available_cb available_cb;
+	ble_midi_packet_tx_cb packet_tx_cb;
 };
 
 /**
