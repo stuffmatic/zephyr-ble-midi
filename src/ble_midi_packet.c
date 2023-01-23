@@ -334,13 +334,17 @@ int ble_midi_packet_append_sysex_msg(
 		return BLE_MIDI_ERROR_INVALID_MESSAGE;
 	}
 	for (int i = 0; i < num_bytes; i++) {
-		if (i == 0 && bytes[i] != 0xf7)
+		if (i == 0)
 		{
-			return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+			if (bytes[i] != 0xf7) {
+				return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+			}
 		}
-		else if (i == num_bytes - 1 && bytes[i] != 0xf0)
+		else if (i == num_bytes - 1)
 		{
-			return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+			if (bytes[i] != 0xf0) {
+				return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+			}
 		}
 		else if (!is_data_byte(bytes[i]))
 		{
@@ -377,6 +381,10 @@ int ble_midi_packet_append_sysex_msg(
 		packet->size++;
 	}
 
+	/* Cancel running status */
+	packet->is_running_status = 0;
+	packet->prev_status_byte = 0;
+
 	return BLE_MIDI_SUCCESS;
 }
 
@@ -395,6 +403,8 @@ int append_sysex_status(struct ble_midi_packet *packet, uint16_t timestamp, uint
 	if (packet->max_size - packet->size < num_bytes_to_append) {
 		return BLE_MIDI_ERROR_PACKET_FULL;
 	}
+
+	/* If we made it here, there's room in the packet for the sysex start message. */
 	if (packet->size == 0) {
 		packet->bytes[packet->size] = packet_header(timestamp);
 		packet->size++;
@@ -404,6 +414,7 @@ int append_sysex_status(struct ble_midi_packet *packet, uint16_t timestamp, uint
 	packet->size++;
 	packet->bytes[packet->size] = status;
 	packet->size++;
+
 	return BLE_MIDI_SUCCESS;
 }
 
@@ -412,6 +423,8 @@ int ble_midi_packet_start_sysex_msg(struct ble_midi_packet *packet, uint16_t tim
 	int result = append_sysex_status(packet, timestamp, 0xf7);
 	if (result == BLE_MIDI_SUCCESS) {
 		packet->in_sysex_msg = 1;
+		packet->is_running_status = 0;
+		packet->prev_status_byte = 0;
 	}
 	return result;
 }
@@ -457,4 +470,23 @@ int ble_midi_packet_append_sysex_data(struct ble_midi_packet *packet, uint8_t *d
 	}
 
 	return num_data_bytes_to_add;
+}
+
+int is_sysex_continuation(uint8_t *packet, uint32_t num_bytes)
+{
+	/* A sysex continuation packet starts with
+	  - a packet header
+		- 0 or more system realtime messages with timestamps
+		- a data byte */
+}
+
+void ble_midi_packet_parse(
+    struct ble_midi_parser *parser,
+    uint8_t *packet,
+    uint32_t num_bytes,
+    midi_message_cb message_cb,
+    sysex_cb sysex_cb
+)
+{
+
 }
