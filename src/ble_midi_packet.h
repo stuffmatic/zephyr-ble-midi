@@ -35,7 +35,7 @@ struct ble_midi_packet
 	   should be added to running status messages. */
 	uint16_t prev_timestamp;
 	/* */
-	uint8_t in_sysex_sequence;
+	uint8_t in_sysex_msg;
 };
 
 void ble_midi_packet_init(struct ble_midi_packet *packet);
@@ -62,7 +62,7 @@ int ble_midi_packet_start_sysex_msg(struct ble_midi_packet *packet, uint16_t tim
 int ble_midi_packet_end_sysex_msg(struct ble_midi_packet *packet, uint16_t timestamp);
 
 /**
- * Append bytes to the ongoing sysex message, possibly spanning multiple packets.
+ * Append bytes to an ongoing sysex message, possibly spanning multiple packets.
  * The chunk must not contain sysex start/end and system real time status bytes.
  * Returns the number of bytes appended.
  */
@@ -76,7 +76,17 @@ typedef void (*midi_message_cb)(uint8_t *bytes, uint8_t num_bytes, uint16_t time
 
 typedef void (*sysex_cb)(uint8_t *bytes, uint8_t num_bytes, uint32_t sysex_ended);
 
+struct ble_midi_parser {
+	uint8_t in_sysex_msg;
+	uint16_t prev_timestamp;
+};
+
 void ble_midi_packet_parse(
-    uint8_t *packet, uint32_t num_bytes, midi_message_cb message_cb, sysex_cb sysex_cb);
+    struct ble_midi_parser *parser,
+    uint8_t *packet,
+    uint32_t num_bytes,
+    midi_message_cb message_cb,
+    sysex_cb sysex_cb
+);
 
 #endif

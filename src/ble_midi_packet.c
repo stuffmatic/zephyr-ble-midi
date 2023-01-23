@@ -142,7 +142,7 @@ void ble_midi_packet_init(struct ble_midi_packet *packet)
 	packet->next_rs_message_needs_timestamp = 0;
 	packet->is_running_status = 0;
 	packet->prev_timestamp = 0;
-	packet->in_sysex_sequence = 0;
+	packet->in_sysex_msg = 0;
 }
 
 void ble_midi_packet_reset(struct ble_midi_packet *packet)
@@ -158,8 +158,8 @@ void ble_midi_packet_reset(struct ble_midi_packet *packet)
 
 int ble_midi_packet_append_msg(struct ble_midi_packet *packet, uint8_t *message_bytes, uint16_t timestamp, int running_status_enabled)
 {
-	/* First, handle special case of system real time message in a sysex sequence */
-	if (packet->in_sysex_sequence)
+	/* First, handle special case of system real time message in a sysex message */
+	if (packet->in_sysex_msg)
 	{
 		if (is_realtime_message(message_bytes[0]))
 		{
@@ -382,10 +382,10 @@ int ble_midi_packet_append_sysex_msg(
 
 int append_sysex_status(struct ble_midi_packet *packet, uint16_t timestamp, uint8_t status)
 {
-	if (packet->in_sysex_sequence && status == 0xf7) {
+	if (packet->in_sysex_msg && status == 0xf7) {
 		return BLE_MIDI_ERROR_IN_SYSEX_SEQUENCE;
 	}
-	else if (!packet->in_sysex_sequence && status == 0xf0) {
+	else if (!packet->in_sysex_msg && status == 0xf0) {
 		return BLE_MIDI_ERROR_NOT_IN_SYSEX_SEQUENCE;
 	}
 	int num_bytes_to_append = 2;
@@ -411,7 +411,7 @@ int ble_midi_packet_start_sysex_msg(struct ble_midi_packet *packet, uint16_t tim
 {
 	int result = append_sysex_status(packet, timestamp, 0xf7);
 	if (result == BLE_MIDI_SUCCESS) {
-		packet->in_sysex_sequence = 1;
+		packet->in_sysex_msg = 1;
 	}
 	return result;
 }
@@ -420,14 +420,14 @@ int ble_midi_packet_end_sysex_msg(struct ble_midi_packet *packet, uint16_t times
 {
 	int result = append_sysex_status(packet, timestamp, 0xf0);
 	if (result == BLE_MIDI_SUCCESS) {
-		packet->in_sysex_sequence = 0;
+		packet->in_sysex_msg = 0;
 	}
 	return result;
 }
 
 int ble_midi_packet_append_sysex_data(struct ble_midi_packet *packet, uint8_t *data_bytes, uint32_t num_data_bytes, uint16_t timestamp)
 {
-	if (!packet->in_sysex_sequence) {
+	if (!packet->in_sysex_msg) {
 		return BLE_MIDI_ERROR_NOT_IN_SYSEX_SEQUENCE;
 	}
 

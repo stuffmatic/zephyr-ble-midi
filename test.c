@@ -2,137 +2,191 @@
 #include <assert.h>
 #include "src/ble_midi_packet.h"
 
-uint8_t note_on_msg[3] = {
-	0x90, 0x69, 0x7f
-};
-uint8_t note_off_msg[3] = {
-	0x80, 0x69, 0x7f
-};
-
-uint8_t tune_request_msg[3] = {
-	0xf6, 0, 0
-};
-
-struct lol {
-	const char* face;
-};
-
-struct lol face = {
-	.face = "HEELO"
-};
-
-static void log_packet(struct ble_midi_packet *packet)
+static void log_buffer(uint8_t *bytes, int num_bytes)
 {
-	printf("BLE MIDI packet (size %d, max %d): ", packet->size, packet->max_size);
-  for (int i = 0; i < packet->size; i++)
+	for (int i = 0; i < num_bytes; i++)
 	{
-		printf("%02x ", ((uint8_t *)packet->bytes)[i]);
+		printf("%02x ", ((uint8_t *)bytes)[i]);
 	}
 	printf("\n");
 }
 
-void test_assert(int condition, const char* message) {
-	if (!condition) {
-		printf("❌ %s\n", message);
-	} else {
-		printf("✅ %s\n", message);
-	}
+static void log_packet(struct ble_midi_packet *packet)
+{
+	printf("BLE MIDI packet (size %d, max %d): ", packet->size, packet->max_size);
+	log_buffer(packet->bytes, packet->size);
 }
 
-void test_parse_note_on_note_off(int condition, const char* message) {
-	struct ble_midi_packet packet;
-	ble_midi_packet_reset(&packet);
-	packet.max_size = 100;
-	ble_midi_packet_append_msg(&packet, note_on_msg, 0, 0);
-	ble_midi_packet_append_msg(&packet, note_off_msg, 0, 0);
-}
-
-void test_reset() {
-	struct ble_midi_packet packet;
-	ble_midi_packet_reset(&packet);
-	packet.max_size = 100;
-	test_assert(packet.size == 0, "Packet size should be zero after reset");
-	test_assert(packet.prev_status_byte == 0, "prev_status_byte should be zero after reset");
-	test_assert(packet.is_running_status == 0, "is_running_status should be zero after reset");
-}
-
-void test_simple_running_status() {
-		struct ble_midi_packet packet;
-		ble_midi_packet_reset(&packet);
-		packet.max_size = 100;
-		ble_midi_packet_append_msg(&packet, note_on_msg, 1000, 1);
-		test_assert(packet.is_running_status == 0, "Should not be running status");
-		test_assert(packet.prev_status_byte == note_on_msg[0], "Invalid prev status");
-		ble_midi_packet_append_msg(&packet, note_off_msg, 1000, 1);
-		test_assert(packet.is_running_status == 1, "Should be running status");
-		ble_midi_packet_append_msg(&packet, note_on_msg, 1000, 1);
-		test_assert(packet.is_running_status == 1, "Should be running status");
-		ble_midi_packet_append_msg(&packet, note_off_msg, 1000, 1);
-		test_assert(packet.is_running_status == 1, "Should be running status");
-		test_assert(packet.size == 1+4+2+2+2, "unexpected running status package size");
-		log_packet(&packet);
-}
-
-void test_running_status_with_rt() {
-		struct ble_midi_packet packet;
-		ble_midi_packet_reset(&packet);
-		packet.max_size = 100;
-		ble_midi_packet_append_msg(&packet, note_on_msg, 1000, 1);
-		log_packet(&packet);
-		test_assert(packet.size == 5, "Unexpected size");
-
-		ble_midi_packet_append_msg(&packet, note_off_msg, 1000, 1);
-		log_packet(&packet);
-		test_assert(packet.size == 7, "Unexpected size");
-
-		ble_midi_packet_append_msg(&packet, note_on_msg, 1000, 1);
-		log_packet(&packet);
-		test_assert(packet.size == 9, "Unexpected size");
-
-		ble_midi_packet_append_msg(&packet, tune_request_msg, 1000, 1);
-		log_packet(&packet);
-		test_assert(packet.size == 11, "Unexpected size");
-
-		ble_midi_packet_append_msg(&packet, note_on_msg, 1000, 1);
-		log_packet(&packet);
-		test_assert(packet.size == 14, "Unexpected size");
-
-		ble_midi_packet_append_msg(&packet, note_off_msg, 1002, 1);
-		log_packet(&packet);
-		test_assert(packet.size == 17, "Unexpected size");
-		ble_midi_packet_append_msg(&packet, tune_request_msg, 1002, 1);
-		test_assert(packet.size == 19, "Unexpected size");
-
-		ble_midi_packet_append_msg(&packet, tune_request_msg, 1002, 1);
-		test_assert(packet.size == 21, "Unexpected size");
-
-		log_packet(&packet);
-		ble_midi_packet_append_msg(&packet, note_on_msg, 1003, 1);
-		log_packet(&packet);
-		test_assert(packet.size == 24, "Unexpected size");
-		ble_midi_packet_append_msg(&packet, note_off_msg, 1003, 1);
-		log_packet(&packet);
-		test_assert(packet.size == 26, "Unexpected size");
-}
-
-void test_sysex()
+void run_serialization_test(const char *desc, int use_running_status, uint16_t packet_max_size, uint8_t messages[][4], int num_messages, uint8_t expected_payload[], int expected_payload_size)
 {
 	struct ble_midi_packet packet;
 	ble_midi_packet_init(&packet);
+	packet.max_size = packet_max_size;
+
+	for (int i = 0; i < num_messages; i++)
+	{
+		ble_midi_packet_append_msg(&packet, messages[i], messages[i][3], use_running_status);
+	}
+	int error = expected_payload_size != packet.size;
+
+	if (!error)
+	{
+		for (int i = 0; i < expected_payload_size; i++)
+		{
+			if (expected_payload[i] != packet.bytes[i])
+			{
+				error = 1;
+				break;
+			}
+		}
+	}
+
+	printf("%s '%s':\n", error ? "❌" : "✅", desc);
+	printf("   expected payload: ");
+	log_buffer(expected_payload, expected_payload_size);
+	printf("   actual payload:   ");
+	log_buffer(packet.bytes, packet.size);
+}
+
+void test_running_status_with_rt()
+{
+	uint8_t messages[][4] = {
+	    {0x90, 0x69, 0x7f, 10},
+	    {0x80, 0x69, 0x7f, 10},
+	    {0x90, 0x69, 0x7f, 10},
+	    {0x80, 0x69, 0x7f, 11},
+	    {0x90, 0x69, 0x7f, 11},
+	    {0xf6, 0, 0, 11},
+	    {0x80, 0x69, 0x7f, 11},
+	    {0x90, 0x69, 0x7f, 11},
+	};
+
+	uint8_t expected_payload[] = {
+	    0x80,		    // packet header
+	    0x8a, 0x90, 0x69, 0x7f, // note on w timestamp
+	    0x69, 0x00,		    // note off, running status, no timestamp
+	    0x69, 0x7f,		    // note on, running status, no timestamp
+	    0x8b, 0x69, 0x00,	    // note off, running status, with timestamp
+	    0x69, 0x7f,		    // note on, running status, no timestamp
+	    0x8b, 0xf6,		    // rt with timestamp
+	    0x8b, 0x69, 0x00,	    // running status with timestamp
+	    0x69, 0x7f		    // running status, no timestamp
+	};
+
+	run_serialization_test(
+	    "Running status with real time msg",
+	    1,
+	    100,
+	    messages,
+	    sizeof(messages) / 4,
+	    expected_payload,
+	    sizeof(expected_payload));
+}
+
+void test_running_status_disabled()
+{
+	uint8_t messages[][4] = {
+	    {0x90, 0x69, 0x7f, 10},
+	    {0x80, 0x69, 0x7f, 10},
+	    {0x90, 0x69, 0x7f, 10},
+	    {0x80, 0x69, 0x7f, 11},
+	    {0x90, 0x69, 0x7f, 11},
+	    {0xf6, 0, 0, 11},
+	    {0x80, 0x69, 0x7f, 11}
+	};
+
+	uint8_t expected_payload[] = {
+	    0x80, // packet header
+	    0x8a, 0x90, 0x69, 0x7f, // note on w timestamp
+	    0x8a, 0x80, 0x69, 0x7f, // note off w timestamp
+	    0x8a, 0x90, 0x69, 0x7f, // note on w timestamp
+	    0x8b, 0x80, 0x69, 0x7f, // note off w timestamp
+	    0x8b, 0x90, 0x69, 0x7f, // note on w timestamp
+	    0x8b, 0xf6, // system rt w timestamp
+	    0x8b, 0x80, 0x69, 0x7f,  // note off w timestamp
+	};
+
+	run_serialization_test(
+	    "Running status disabled",
+	    0,
+	    100,
+	    messages,
+	    sizeof(messages) / 4,
+	    expected_payload,
+	    sizeof(expected_payload));
+}
+
+void test_full_packet()
+{
+	uint8_t messages[][4] = {
+	    {0xb0, 0x12, 0x34, 10},
+	    {0xe0, 0x12, 0x34, 10},
+	    {0xb0, 0x12, 0x34, 10},
+	    {0xe0, 0x12, 0x34, 10},
+	    {0xb0, 0x12, 0x34, 10},
+	    {0xe0, 0x12, 0x34, 10}
+	};
+
+	uint8_t expected_payload[] = {
+	    0x80, // packet header
+	    0x8a, 0xb0, 0x12, 0x34,
+	    0x8a, 0xe0, 0x12, 0x34,
+	    0x8a, 0xb0, 0x12, 0x34,
+	    0x8a, 0xe0, 0x12, 0x34,
+	    0x8a, 0xb0, 0x12, 0x34,
+	    // 0x8a, 0xe0, 0x12, 0x34 <- should not fit in the packet
+	};
+
+	run_serialization_test(
+	    "No room left in packet",
+	    0,
+	    22,
+	    messages,
+	    sizeof(messages) / 4,
+	    expected_payload,
+	    sizeof(expected_payload));
+}
+
+void test_rt_in_sysex() {
+	struct ble_midi_packet packet;
+	ble_midi_packet_init(&packet);
 	packet.max_size = 100;
-	ble_midi_packet_start_sysex_msg(&packet, 100);
-	log_packet(&packet);
-	uint8_t data[3] = {1, 2, 3};
-	int rc = ble_midi_packet_append_sysex_data(&packet, data, 3, 100);
-	printf("rc %d\n", rc);
-	log_packet(&packet);
-	ble_midi_packet_end_sysex_msg(&packet, 100);
+
+	/* Control change */
+	uint8_t msg[] = { 0xb0, 0x12, 0x23 };
+	ble_midi_packet_append_msg(&packet, msg, 200, 0);
+	/* sysex start */
+	ble_midi_packet_start_sysex_msg(&packet, 210);
+	/* sysex data */
+	uint8_t sysex_data[] = { 0x01, 0x02, 0x03, 0x04 };
+	ble_midi_packet_append_sysex_data(&packet, sysex_data, 4, 210);
+	/* attempt to add note on in sysex message. should not work. */
+	uint8_t note_on[] = { 0x90, 0x69, 0x7f };
+	int result = ble_midi_packet_append_msg(&packet, note_on, 220, 0);
+	/* system real time in sysex message */
+	uint8_t rt[] = { 0xfe };
+	result = ble_midi_packet_append_msg(&packet, rt, 220, 0);
+	/* sysex end */
+	ble_midi_packet_end_sysex_msg(&packet, 210);
+	/* note on */
+	result = ble_midi_packet_append_msg(&packet, note_on, 220, 0);
+
+	uint8_t expected_payload[] = {
+		0x83, // packet header
+		0xc8, 0xb0, 0x12, 0x23, // control change
+		0xd2, 0xf7, // sysex start
+		0x01, 0x02, 0x03, 0x04, // sysex data
+		0xdc, 0xfe, // system rt
+		0xd2, 0xf0, // sysex end
+		0xdc, 0x90, 0x69, 0x7f // note on
+	};
 	log_packet(&packet);
 }
 
-int main(int argc, char *argv[]) {
-	test_sysex();
-	// test_reset();
-	// test_simple_running_status();
-	// test_running_status_with_rt();
+int main(int argc, char *argv[])
+{
+	test_running_status_with_rt();
+	test_running_status_disabled();
+	test_full_packet();
+	test_rt_in_sysex();
 }
