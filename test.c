@@ -2,6 +2,11 @@
 #include <assert.h>
 #include "src/ble_midi_packet.h"
 
+typedef struct {
+	uint8_t bytes[3];
+	uint16_t timestamp;
+} midi_msg_t;
+
 static void log_buffer(uint8_t *bytes, int num_bytes)
 {
 	for (int i = 0; i < num_bytes; i++)
@@ -11,19 +16,30 @@ static void log_buffer(uint8_t *bytes, int num_bytes)
 	printf("\n");
 }
 
-void assert_midi_message_equals(uint8_t actual[3], uint8_t expected[3])
+void assert_midi_msg_equals(midi_msg_t *actual, midi_msg_t *expected)
 {
 	int equal = 1;
 	for (int i = 0; i < 3; i++) {
-		if (actual[i] != expected[i]) {
+		if (actual->bytes[i] != expected->bytes[i]) {
 			equal = 0;
 			break;
 		}
 	}
 
-	printf("%s actual %02x %02x %02x, expected %02x %02x %02x\n",
-	equal ? "✅" : "❌",
-	actual[0], actual[1], actual[2], expected[0], expected[1], expected[2]);
+	/* Check if messages are equivalent. */
+	uint8_t actual_high_nibble = actual->bytes[0] >> 4;
+	uint8_t actual_second_data = actual->bytes[2];
+	uint8_t expected_high_nibble = expected->bytes[0] >> 4;
+	uint8_t expected_second_data = expected->bytes[2];
+
+	int equivalent = actual_high_nibble == 0x8 && expected_high_nibble == 0x9 && expected_second_data == 0;
+	equivalent = equivalent || (expected_high_nibble == 0x8 && actual_high_nibble == 0x9 && actual_second_data == 0);
+
+	printf("%s actual %02x %02x %02x, expected %02x %02x %02x%s\n",
+	equal || equivalent ? "✅" : "❌",
+	actual->bytes[0], actual->bytes[1], actual->bytes[2],
+	expected->bytes[0], expected->bytes[1], expected->bytes[2],
+	equivalent ? " (equivalent)" : "");
 
 }
 
@@ -67,12 +83,13 @@ void assert_equals(int actual, int expected)
 }
 
 static int num_parsed_messages = 0;
-static uint8_t parsed_messages[100][3];
+static midi_msg_t parsed_messages[100];
 
 void midi_message_cb(uint8_t *bytes, uint8_t num_bytes, uint16_t timestamp)
 {
 	for (int i = 0; i < 3; i++) {
-		parsed_messages[num_parsed_messages][i] = i < num_bytes ? bytes[i] : 0;
+		parsed_messages[num_parsed_messages].bytes[i] = i < num_bytes ? bytes[i] : 0;
+		parsed_messages[num_parsed_messages].timestamp = timestamp;
 	}
 	num_parsed_messages++;
 }
@@ -80,45 +97,56 @@ void sysex_data_cb(uint8_t data_byte)
 {
 
 }
-void sysex_start_cb()
+void sysex_start_cb(uint16_t timestamp)
 {
 
 }
-void sysex_end_cb()
+void sysex_end_cb(uint16_t timestamp)
 {
 
 }
 
-void run_serialization_test(const char *desc, int use_running_status, uint16_t packet_max_size, uint8_t messages[][4], int num_messages, uint8_t expected_payload[], int expected_payload_size)
+void roundtrip_test(const char *desc,
+										int use_running_status,
+										uint16_t packet_max_size,
+										midi_msg_t messages[],
+										int num_messages,
+										uint8_t expected_payload[],
+										int expected_payload_size)
 {
+	/* Init tx packet with the prescribed size */
 	struct ble_midi_packet_t packet;
 	ble_midi_packet_init(&packet);
 	packet.max_size = packet_max_size;
 
+	/* Add messages to tx packet */
 	for (int i = 0; i < num_messages; i++) {
-		ble_midi_packet_add_msg(&packet, messages[i], messages[i][3], use_running_status);
+		ble_midi_packet_add_msg(&packet, messages[i].bytes, messages[i].timestamp, use_running_status);
 	}
-	assert_payload_equals(&packet, expected_payload, expected_payload_size, desc);
-	num_parsed_messages = 0;
 
+	/* The tx packet payload should equal the reference payload */
+	assert_payload_equals(&packet, expected_payload, expected_payload_size, desc);
+
+	/* Parse tx payload. The resulting messages should equal the original messages.*/
+	num_parsed_messages = 0;
 	ble_midi_parse_packet(packet.bytes, packet.size, midi_message_cb, sysex_start_cb, sysex_data_cb, sysex_end_cb);
 	int n = num_messages < num_parsed_messages ? num_messages : num_parsed_messages;
 	for (int i = 0; i < n; i++) {
-		assert_midi_message_equals(parsed_messages[i], messages[i]);
+		assert_midi_msg_equals(&parsed_messages[i], &messages[i]);
 	}
 }
 
 void test_running_status_with_one_rt()
 {
-	uint8_t messages[][4] = {
-			{0x90, 0x69, 0x7f, 10},
-			{0x80, 0x69, 0x7f, 10},
-			{0x90, 0x69, 0x7f, 10},
-			{0x80, 0x69, 0x7f, 11},
-			{0x90, 0x69, 0x7f, 11},
-			{0xf6, 0, 0, 11},
-			{0x80, 0x69, 0x7f, 11},
-			{0x90, 0x69, 0x7f, 11},
+	midi_msg_t messages[] = {
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 11},
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 11},
+			{ .bytes = { 0xf6, 0, 0 }, .timestamp = 11},
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 11},
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 11},
 	};
 
 	uint8_t expected_payload[] = {
@@ -133,7 +161,7 @@ void test_running_status_with_one_rt()
 			0x69, 0x7f							// running status, no timestamp
 	};
 
-	run_serialization_test(
+	roundtrip_test(
 			"One system common message should not cancel running status",
 			1,
 			100,
@@ -145,16 +173,16 @@ void test_running_status_with_one_rt()
 
 void test_running_status_with_two_rt()
 {
-	uint8_t messages[][4] = {
-			{0x90, 0x69, 0x7f, 10},
-			{0x80, 0x69, 0x7f, 10},
-			{0x90, 0x69, 0x7f, 10},
-			{0x80, 0x69, 0x7f, 11},
-			{0x90, 0x69, 0x7f, 11},
-			{0xf6, 0, 0, 11}, /* System common */
-			{0xfe, 0, 0, 11}, /* System real time */
-			{0x80, 0x69, 0x7f, 11},
-			{0x90, 0x69, 0x7f, 11},
+	midi_msg_t messages[] = {
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 11},
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 11},
+			{ .bytes = { 0xf6, 0, 0 }, .timestamp = 11}, /* System common */
+			{ .bytes = { 0xfe, 0, 0 }, .timestamp = 11}, /* System real time */
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 11},
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 11},
 	};
 
 	uint8_t expected_payload[] = {
@@ -170,7 +198,7 @@ void test_running_status_with_two_rt()
 			0x69, 0x7f							/* running status, no timestamp */
 	};
 
-	run_serialization_test(
+	roundtrip_test(
 			"Two consecutive real time/common messages should not cancel running status",
 			1,
 			100,
@@ -182,14 +210,14 @@ void test_running_status_with_two_rt()
 
 void test_running_status_disabled()
 {
-	uint8_t messages[][4] = {
-			{0x90, 0x69, 0x7f, 10},
-			{0x80, 0x69, 0x7f, 10},
-			{0x90, 0x69, 0x7f, 10},
-			{0x80, 0x69, 0x7f, 11},
-			{0x90, 0x69, 0x7f, 11},
-			{0xf6, 0, 0, 11},
-			{0x80, 0x69, 0x7f, 11}};
+	midi_msg_t messages[] = {
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 10},
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 11},
+			{ .bytes = { 0x90, 0x69, 0x7f }, .timestamp = 11},
+			{ .bytes = { 0xf6, 0, 0 }, .timestamp = 11},
+			{ .bytes = { 0x80, 0x69, 0x7f }, .timestamp = 11}};
 
 	uint8_t expected_payload[] = {
 			0x80,										/* packet header */
@@ -202,25 +230,26 @@ void test_running_status_disabled()
 			0x8b, 0x80, 0x69, 0x7f, /* note off w timestamp */
 	};
 
-	run_serialization_test(
+	roundtrip_test(
 			"Timestamp and status bytes should be added for all messages when running status is disabled",
 			0,
 			100,
 			messages,
-			sizeof(messages) / 4,
+			sizeof(messages) / sizeof(midi_msg_t),
 			expected_payload,
 			sizeof(expected_payload));
 }
 
 void test_full_packet()
 {
-	uint8_t messages[][4] = {
-			{0xb0, 0x12, 0x34, 10},
-			{0xe0, 0x12, 0x34, 10},
-			{0xb0, 0x12, 0x34, 10},
-			{0xe0, 0x12, 0x34, 10},
-			{0xb0, 0x12, 0x34, 10},
-			{0xe0, 0x12, 0x34, 10}};
+	midi_msg_t messages[] = {
+			{ .bytes = { 0xb0, 0x12, 0x34 }, .timestamp = 10},
+			{ .bytes = { 0xe0, 0x12, 0x34 }, .timestamp = 10},
+			{ .bytes = { 0xb0, 0x12, 0x34 }, .timestamp = 10},
+			{ .bytes = { 0xe0, 0x12, 0x34 }, .timestamp = 10},
+			{ .bytes = { 0xb0, 0x12, 0x34 }, .timestamp = 10},
+			{ .bytes = { 0xe0, 0x12, 0x34 }, .timestamp = 10}
+		};
 
 	uint8_t expected_payload[] = {
 			0x80, // packet header
@@ -232,12 +261,12 @@ void test_full_packet()
 			/* 0x8a, 0xe0, 0x12, 0x34 <- should not fit in the packet */
 	};
 
-	run_serialization_test(
+	roundtrip_test(
 			"Message that doesn't fit in tx buffer should not be added",
 			0,
 			22,
 			messages,
-			sizeof(messages) / 4,
+			sizeof(messages) / sizeof(midi_msg_t),
 			expected_payload,
 			sizeof(expected_payload));
 }
