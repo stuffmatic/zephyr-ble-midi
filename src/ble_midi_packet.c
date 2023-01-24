@@ -2,8 +2,7 @@
 
 uint16_t timestamp_ms(uint8_t packet_header, uint8_t message_timestamp)
 {
-	// TODO
-	return 1234;
+	return (0x7f & packet_header) << 6 | (0x7f & message_timestamp);
 }
 
 uint32_t is_status_byte(uint8_t byte)
