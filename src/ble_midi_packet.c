@@ -124,7 +124,8 @@ uint8_t message_size(uint8_t status_byte)
 
 uint8_t packet_header(uint16_t timestamp)
 {
-	return 0x80 | ((timestamp >> 6) & 0xf);
+	uint16_t timestamp_13_bits = 0x1fff & timestamp;
+	return 0x80 | ((timestamp_13_bits >> 6) & 0xf);
 }
 
 uint8_t message_timestamp(uint16_t timestamp)
@@ -132,42 +133,42 @@ uint8_t message_timestamp(uint16_t timestamp)
 	return 0x80 | (0x7f & timestamp);
 }
 
-void ble_midi_packet_init(struct ble_midi_packet_t *packet,
+void ble_midi_writer_init(struct ble_midi_writer_t *writer,
 											    int running_status_enabled,
 				  								int note_off_as_note_on)
 {
-	packet->max_size = 0;
-	packet->size = 0;
-	packet->prev_running_status_byte = 0;
-	packet->prev_status_byte = 0;
-	packet->prev_timestamp = 0;
-	packet->in_sysex_msg = 0;
-	packet->note_off_as_note_on = note_off_as_note_on;
-	packet->running_status_enabled = running_status_enabled;
+	writer->tx_buf_max_size = 0;
+	writer->tx_buf_size = 0;
+	writer->prev_running_status_byte = 0;
+	writer->prev_status_byte = 0;
+	writer->prev_timestamp = 0;
+	writer->in_sysex_msg = 0;
+	writer->note_off_as_note_on = note_off_as_note_on;
+	writer->running_status_enabled = running_status_enabled;
 }
 
-void ble_midi_packet_reset(struct ble_midi_packet_t *packet)
+void ble_midi_writer_reset(struct ble_midi_writer_t *writer)
 {
-	packet->size = 0;
-	packet->prev_timestamp = 0;
+	writer->tx_buf_size = 0;
+	writer->prev_timestamp = 0;
 
 	/* The end of a BLE packet cancels running status. */
-	packet->prev_running_status_byte = 0;
-	packet->prev_status_byte = 0;
+	writer->prev_running_status_byte = 0;
+	writer->prev_status_byte = 0;
 }
 
-int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
+int ble_midi_writer_add_msg(struct ble_midi_writer_t *writer,
 														uint8_t *message_bytes, uint16_t timestamp)
 {
 	/* First, handle special case of system real time message in a sysex message */
-	if (packet->in_sysex_msg) {
+	if (writer->in_sysex_msg) {
 		if (is_realtime_message(message_bytes[0])) {
-			if (packet->max_size - packet->size >= 2)
+			if (writer->tx_buf_max_size - writer->tx_buf_size >= 2)
 			{
-				packet->bytes[packet->size] = message_timestamp(timestamp);
-				packet->size++;
-				packet->bytes[packet->size] = message_bytes[0];
-				packet->size++;
+				writer->tx_buf[writer->tx_buf_size] = message_timestamp(timestamp);
+				writer->tx_buf_size++;
+				writer->tx_buf[writer->tx_buf_size] = message_bytes[0];
+				writer->tx_buf_size++;
 				return BLE_MIDI_SUCCESS;
 			}
 			else {
@@ -201,13 +202,13 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 	}
 
 	/* Use running status? */
-	uint8_t prev_running_status_byte = packet->prev_running_status_byte;
+	uint8_t prev_running_status_byte = writer->prev_running_status_byte;
 
-	if (!packet->running_status_enabled) {
+	if (!writer->running_status_enabled) {
 		prev_running_status_byte = 0;
 	}
 	else if (is_channel_message(status_byte)) {
-		if ((status_byte >> 4) == 0x8 && packet->note_off_as_note_on) {
+		if ((status_byte >> 4) == 0x8 && writer->note_off_as_note_on) {
 			/* This is a note off message. Represent it as a note
 			    on with velocity 0 to increase running status efficiency. */
 			status_byte = 0x90 | (status_byte & 0xf);
@@ -233,7 +234,7 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 	uint8_t num_bytes_to_append = 0;
 
 	/* Add packet header byte? */
-	if (packet->size == 0) {
+	if (writer->tx_buf_size == 0) {
 		bytes_to_append[num_bytes_to_append] = packet_header(timestamp);
 		num_bytes_to_append++;
 	}
@@ -241,9 +242,9 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 	/* Skip the message timestamp if we're in a running status sequence, the timestamp
 	   hasn't changed and we're dealing with a channel message that was not preceded
 	   by a system realtime/common message. */
-	int is_running_status = status_byte == packet->prev_running_status_byte;
-	uint16_t prev_timestamp = packet->prev_timestamp;
-	int prev_msg_is_sys_rt_or_cmn = is_system_common_message(packet->prev_status_byte) || is_realtime_message(packet->prev_status_byte);
+	int is_running_status = status_byte == writer->prev_running_status_byte;
+	uint16_t prev_timestamp = writer->prev_timestamp;
+	int prev_msg_is_sys_rt_or_cmn = is_system_common_message(writer->prev_status_byte) || is_realtime_message(writer->prev_status_byte);
 	int skip_msg_timestamp = is_running_status && timestamp == prev_timestamp && is_channel_message(status_byte) && !prev_msg_is_sys_rt_or_cmn;
 	if (!skip_msg_timestamp) {
 		bytes_to_append[num_bytes_to_append] = message_timestamp(timestamp);
@@ -265,16 +266,16 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 	}
 
 	/* Append bytes to the BLE packet */
-	if (packet->size + num_bytes_to_append <= packet->max_size) {
+	if (writer->tx_buf_size + num_bytes_to_append <= writer->tx_buf_max_size) {
 		for (int i = 0; i < num_bytes_to_append; i++) {
-			packet->bytes[packet->size] = bytes_to_append[i];
-			packet->size++;
+			writer->tx_buf[writer->tx_buf_size] = bytes_to_append[i];
+			writer->tx_buf_size++;
 		}
 
 		/* Update packet state */
-		packet->prev_status_byte = status_byte;
-		packet->prev_running_status_byte = prev_running_status_byte;
-		packet->prev_timestamp = timestamp;
+		writer->prev_status_byte = status_byte;
+		writer->prev_running_status_byte = prev_running_status_byte;
+		writer->prev_timestamp = timestamp;
 
 		return BLE_MIDI_SUCCESS;
 	}
@@ -283,8 +284,8 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 	}
 }
 
-int ble_midi_packet_add_sysex_msg(
-    struct ble_midi_packet_t *packet,
+int ble_midi_writer_add_sysex_msg(
+    struct ble_midi_writer_t *writer,
     uint8_t *bytes,
     uint32_t num_bytes,
     uint16_t timestamp
@@ -312,88 +313,88 @@ int ble_midi_packet_add_sysex_msg(
 
 	/* See if there's room in the packet */
 	int num_bytes_to_append = num_bytes + 2; /* +2 for timestamp bytes */
-	if (packet->size == 0) {
+	if (writer->tx_buf_size == 0) {
 		num_bytes_to_append++;
 	}
-	if (packet->max_size - packet->size < num_bytes_to_append) {
+	if (writer->tx_buf_max_size - writer->tx_buf_size < num_bytes_to_append) {
 		return BLE_MIDI_ERROR_PACKET_FULL;
 	}
 
 	/* Add packet header? */
-	if (packet->size == 0) {
-		packet->bytes[packet->size] = packet_header(timestamp);
-		packet->size++;
+	if (writer->tx_buf_size == 0) {
+		writer->tx_buf[writer->tx_buf_size] = packet_header(timestamp);
+		writer->tx_buf_size++;
 	}
 
 	/* Add message bytes */
 	for (int i = 0; i < num_bytes; i++) {
 		if (i == 0 || i == num_bytes - 1) {
-			packet->bytes[packet->size] = message_timestamp(timestamp);
-			packet->size++;
+			writer->tx_buf[writer->tx_buf_size] = message_timestamp(timestamp);
+			writer->tx_buf_size++;
 		}
-		packet->bytes[packet->size] = bytes[i];
-		packet->size++;
+		writer->tx_buf[writer->tx_buf_size] = bytes[i];
+		writer->tx_buf_size++;
 	}
 
 	/* Cancel running status */
-	packet->prev_running_status_byte = 0;
+	writer->prev_running_status_byte = 0;
 
 	return BLE_MIDI_SUCCESS;
 }
 
-int append_status_byte_with_timestamp(struct ble_midi_packet_t *packet, uint16_t timestamp, uint8_t status)
+int append_status_byte_with_timestamp(struct ble_midi_writer_t *writer, uint16_t timestamp, uint8_t status)
 {
 	int num_bytes_to_append = 2;
-	if (packet->size == 0) {
+	if (writer->tx_buf_size == 0) {
 		/* Also add packet header */
 		num_bytes_to_append++;
 	}
-	if (packet->max_size - packet->size < num_bytes_to_append) {
+	if (writer->tx_buf_max_size - writer->tx_buf_size < num_bytes_to_append) {
 		return BLE_MIDI_ERROR_PACKET_FULL;
 	}
 
 	/* If we made it here, there's room in the packet for the sysex start message. */
-	if (packet->size == 0) {
-		packet->bytes[packet->size] = packet_header(timestamp);
-		packet->size++;
+	if (writer->tx_buf_size == 0) {
+		writer->tx_buf[writer->tx_buf_size] = packet_header(timestamp);
+		writer->tx_buf_size++;
 	}
 
-	packet->bytes[packet->size] = message_timestamp(timestamp);
-	packet->size++;
-	packet->bytes[packet->size] = status;
-	packet->size++;
+	writer->tx_buf[writer->tx_buf_size] = message_timestamp(timestamp);
+	writer->tx_buf_size++;
+	writer->tx_buf[writer->tx_buf_size] = status;
+	writer->tx_buf_size++;
 
 	return BLE_MIDI_SUCCESS;
 }
 
-int ble_midi_packet_start_sysex_msg(struct ble_midi_packet_t *packet, uint16_t timestamp)
+int ble_midi_writer_start_sysex_msg(struct ble_midi_writer_t *writer, uint16_t timestamp)
 {
-	if (packet->in_sysex_msg) {
+	if (writer->in_sysex_msg) {
 		return BLE_MIDI_ERROR_IN_SYSEX_SEQUENCE;
 	}
-	int result = append_status_byte_with_timestamp(packet, timestamp, 0xf7);
+	int result = append_status_byte_with_timestamp(writer, timestamp, 0xf7);
 	if (result == BLE_MIDI_SUCCESS) {
-		packet->in_sysex_msg = 1;
-		packet->prev_running_status_byte = 0;
+		writer->in_sysex_msg = 1;
+		writer->prev_running_status_byte = 0;
 	}
 	return result;
 }
 
-int ble_midi_packet_end_sysex_msg(struct ble_midi_packet_t *packet, uint16_t timestamp)
+int ble_midi_writer_end_sysex_msg(struct ble_midi_writer_t *writer, uint16_t timestamp)
 {
-	if (!packet->in_sysex_msg) {
+	if (!writer->in_sysex_msg) {
 		return BLE_MIDI_ERROR_NOT_IN_SYSEX_SEQUENCE;
 	}
-	int result = append_status_byte_with_timestamp(packet, timestamp, 0xf0);
+	int result = append_status_byte_with_timestamp(writer, timestamp, 0xf0);
 	if (result == BLE_MIDI_SUCCESS) {
-		packet->in_sysex_msg = 0;
+		writer->in_sysex_msg = 0;
 	}
 	return result;
 }
 
-int ble_midi_packet_add_sysex_data(struct ble_midi_packet_t *packet, uint8_t *data_bytes, uint32_t num_data_bytes, uint16_t timestamp)
+int ble_midi_writer_add_sysex_data(struct ble_midi_writer_t *writer, uint8_t *data_bytes, uint32_t num_data_bytes, uint16_t timestamp)
 {
-	if (!packet->in_sysex_msg) {
+	if (!writer->in_sysex_msg) {
 		return BLE_MIDI_ERROR_NOT_IN_SYSEX_SEQUENCE;
 	}
 
@@ -406,20 +407,20 @@ int ble_midi_packet_add_sysex_data(struct ble_midi_packet_t *packet, uint8_t *da
 	}
 
 	/* Add packet header */
-	if (packet->size == 0) {
-		if (packet->max_size < 1) {
+	if (writer->tx_buf_size == 0) {
+		if (writer->tx_buf_max_size < 1) {
 			return BLE_MIDI_ERROR_PACKET_FULL;
 		}
-		packet->bytes[packet->size] = packet_header(timestamp);
-		packet->size++;
+		writer->tx_buf[writer->tx_buf_size] = packet_header(timestamp);
+		writer->tx_buf_size++;
 	}
 
 	/* Add data bytes until end of data or end of packet. */
-	int num_bytes_left = packet->max_size - packet->size;
+	int num_bytes_left = writer->tx_buf_max_size - writer->tx_buf_size;
 	int num_data_bytes_to_add = num_bytes_left < num_data_bytes ? num_bytes_left : num_data_bytes;
 	for (int i = 0; i < num_data_bytes_to_add; i++) {
-		packet->bytes[packet->size] = data_bytes[i];
-		packet->size++;
+		writer->tx_buf[writer->tx_buf_size] = data_bytes[i];
+		writer->tx_buf_size++;
 	}
 
 	/* Return the number of data bytes added */
@@ -431,14 +432,14 @@ struct ble_midi_parser_t {
 	uint8_t running_status_byte;
 	uint16_t prev_timestamp_byte;
 	uint32_t read_pos;
-	uint8_t *packet;
-	uint32_t packet_size;
+	uint8_t *rx_buf;
+	uint32_t rx_buf_size;
 };
 
 static int ble_midi_parser_read(struct ble_midi_parser_t *parser, uint8_t* result, uint32_t num_bytes) {
-	if (parser->read_pos <= parser->packet_size - num_bytes) {
+	if (parser->read_pos <= parser->rx_buf_size - num_bytes) {
 		for (int i = 0; i < num_bytes; i++) {
-			result[i] = parser->packet[parser->read_pos];
+			result[i] = parser->rx_buf[parser->read_pos];
 			parser->read_pos++;
 		}
 		return 0;
@@ -460,7 +461,7 @@ static int is_sysex_continuation(struct ble_midi_parser_t *parser, int *is_sysex
 		return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
 	}
 
-	while (parser->read_pos < parser->packet_size) {
+	while (parser->read_pos < parser->rx_buf_size) {
 		uint8_t byte_1 = 0;
 		if (ble_midi_parser_read(parser, &byte_1, 1)) {
 			return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
@@ -492,8 +493,8 @@ static int is_sysex_continuation(struct ble_midi_parser_t *parser, int *is_sysex
 }
 
 int ble_midi_parse_packet(
-    uint8_t *packet,
-    uint32_t packet_size,
+    uint8_t *rx_packet,
+    uint32_t rx_packet_size,
     midi_message_cb_t message_cb,
     sysex_start_cb_t sysex_start_cb,
     sysex_data_cb_t sysex_data_cb,
@@ -504,8 +505,8 @@ int ble_midi_parse_packet(
 	struct ble_midi_parser_t parser = {
 		.in_sysex_msg = 0,
 		.prev_timestamp_byte = 0,
-		.packet = packet,
-		.packet_size = packet_size,
+		.rx_buf = rx_packet,
+		.rx_buf_size = rx_packet_size,
 		.read_pos = 0,
 		.running_status_byte = 0
 	};
@@ -526,7 +527,7 @@ int ble_midi_parse_packet(
 	}
 
 	/* Parse messages */
-	while (parser.read_pos < parser.packet_size) {
+	while (parser.read_pos < parser.rx_buf_size) {
 		if (parser.in_sysex_msg) {
 			/* Only data bytes or system real time with timestamp allowed in sysex messages */
 			uint8_t byte = 0;

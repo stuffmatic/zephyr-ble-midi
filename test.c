@@ -52,17 +52,17 @@ void assert_midi_msg_equals(midi_msg_t *actual, midi_msg_t *expected)
 }
 
 void assert_payload_equals(
-		struct ble_midi_packet_t *packet,
+		struct ble_midi_writer_t *writer,
 		uint8_t *expected_payload,
 		int expected_payload_size)
 {
-	int error = expected_payload_size != packet->size;
+	int error = expected_payload_size != writer->tx_buf_size;
 
 	if (!error)
 	{
 		for (int i = 0; i < expected_payload_size; i++)
 		{
-			if (expected_payload[i] != packet->bytes[i])
+			if (expected_payload[i] != writer->tx_buf[i])
 			{
 				error = 1;
 				break;
@@ -74,7 +74,7 @@ void assert_payload_equals(
 	printf("        expected payload: ");
 	log_buffer(expected_payload, expected_payload_size);
 	printf("        actual payload:   ");
-	log_buffer(packet->bytes, packet->size);
+	log_buffer(writer->tx_buf, writer->tx_buf_size);
 	printf("\n");
 }
 
@@ -151,9 +151,9 @@ void roundtrip_test(const char *desc,
 	printf("Roundtrip test '%s'\n", desc);
 
 	/* Init tx packet with the prescribed size */
-	struct ble_midi_packet_t packet;
-	ble_midi_packet_init(&packet, use_running_status, 1);
-	packet.max_size = packet_max_size;
+	struct ble_midi_writer_t packet;
+	ble_midi_writer_init(&packet, use_running_status, 1);
+	packet.tx_buf_max_size = packet_max_size;
 
 	/* Add messages to tx packet */
 	printf("    Adding %d input messages to tx packet\n\n", num_messages);
@@ -162,19 +162,19 @@ void roundtrip_test(const char *desc,
 		uint8_t status_byte = messages[i].bytes[0];
 		if (status_byte == 0xf7)
 		{
-			assert_error_code(ble_midi_packet_start_sysex_msg(&packet, messages[i].timestamp), BLE_MIDI_SUCCESS);
+			assert_error_code(ble_midi_writer_start_sysex_msg(&packet, messages[i].timestamp), BLE_MIDI_SUCCESS);
 		}
 		else if (status_byte == 0xf0)
 		{
-			assert_error_code(ble_midi_packet_end_sysex_msg(&packet, messages[i].timestamp), BLE_MIDI_SUCCESS);
+			assert_error_code(ble_midi_writer_end_sysex_msg(&packet, messages[i].timestamp), BLE_MIDI_SUCCESS);
 		}
 		else if (status_byte < 0x80)
 		{
-			ble_midi_packet_add_sysex_data(&packet, messages[i].bytes, 1, messages[i].timestamp);
+			ble_midi_writer_add_sysex_data(&packet, messages[i].bytes, 1, messages[i].timestamp);
 		}
 		else
 		{
-			assert_error_code(ble_midi_packet_add_msg(&packet, messages[i].bytes, messages[i].timestamp), BLE_MIDI_SUCCESS);
+			assert_error_code(ble_midi_writer_add_msg(&packet, messages[i].bytes, messages[i].timestamp), BLE_MIDI_SUCCESS);
 		}
 	}
 
@@ -184,7 +184,7 @@ void roundtrip_test(const char *desc,
 	printf("    Parsing tx payload\n\n");
 	/* Parse tx payload. The resulting messages should equal the original messages.*/
 	num_parsed_messages = 0;
-	ble_midi_parse_packet(packet.bytes, packet.size, midi_message_cb, sysex_start_cb, sysex_data_cb, sysex_end_cb);
+	ble_midi_parse_packet(packet.tx_buf, packet.tx_buf_size, midi_message_cb, sysex_start_cb, sysex_data_cb, sysex_end_cb);
 	int n = num_messages < num_parsed_messages ? num_messages : num_parsed_messages;
 	printf("    Comparing input and parsed messages\n");
 	for (int i = 0; i < n; i++)
@@ -319,12 +319,12 @@ void test_full_packet()
 			/* 0x8a, 0xe0, 0x12, 0x34 <- should not fit in the packet */
 	};
 
-	struct ble_midi_packet_t packet;
-	ble_midi_packet_init(&packet, 1, 1);
-	packet.max_size = 22;
+	struct ble_midi_writer_t packet;
+	ble_midi_writer_init(&packet, 1, 1);
+	packet.tx_buf_max_size = 22;
 
 	for (int i = 0; i < sizeof(messages) / sizeof(midi_msg_t); i++) {
-		ble_midi_packet_add_msg(&packet, messages[i].bytes, messages[i].timestamp);
+		ble_midi_writer_add_msg(&packet, messages[i].bytes, messages[i].timestamp);
 	}
 
 	assert_payload_equals(&packet, expected_payload, sizeof(expected_payload));
@@ -395,20 +395,20 @@ void test_multi_packet_sysex()
 	{
 		sysex_data[i] = i;
 	}
-	struct ble_midi_packet_t packet;
-	ble_midi_packet_init(&packet, 1, 1);
-	packet.max_size = 9;
+	struct ble_midi_writer_t packet;
+	ble_midi_writer_init(&packet, 1, 1);
+	packet.tx_buf_max_size = 9;
 
-	assert_error_code(ble_midi_packet_start_sysex_msg(&packet, 100), BLE_MIDI_SUCCESS);
-	int num_bytes_added = ble_midi_packet_add_sysex_data(&packet, sysex_data, sizeof(sysex_data), 200);
+	assert_error_code(ble_midi_writer_start_sysex_msg(&packet, 100), BLE_MIDI_SUCCESS);
+	int num_bytes_added = ble_midi_writer_add_sysex_data(&packet, sysex_data, sizeof(sysex_data), 200);
 	assert_equals(num_bytes_added, 6);
 	uint8_t expected_payload_1[] = {0x81, 0xe4, 0xf7, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
 	assert_payload_equals(&packet, expected_payload_1, sizeof(expected_payload_1));
 
-	ble_midi_packet_reset(&packet);
-	num_bytes_added = ble_midi_packet_add_sysex_data(&packet, &sysex_data[num_bytes_added], sizeof(sysex_data) - num_bytes_added, 200);
+	ble_midi_writer_reset(&packet);
+	num_bytes_added = ble_midi_writer_add_sysex_data(&packet, &sysex_data[num_bytes_added], sizeof(sysex_data) - num_bytes_added, 200);
 	assert_equals(num_bytes_added, 4);
-	assert_error_code(ble_midi_packet_end_sysex_msg(&packet, 100), BLE_MIDI_SUCCESS);
+	assert_error_code(ble_midi_writer_end_sysex_msg(&packet, 100), BLE_MIDI_SUCCESS);
 	uint8_t expected_payload_2[] = {0x83, 0x06, 0x07, 0x08, 0x09, 0xe4, 0xf0};
 	assert_payload_equals(&packet, expected_payload_2, sizeof(expected_payload_2));
 }
@@ -418,20 +418,20 @@ void test_packet_end_cancels_running_status()
 	printf("Packet end should cancel running status\n");
 	uint8_t note_on[] = {0x90, 0x69, 0x7f};
 	uint8_t note_off[] = {0x80, 0x69, 0x7f};
-	struct ble_midi_packet_t packet;
-	ble_midi_packet_init(&packet, 1, 1);
-	packet.max_size = 8;
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_on, 100), BLE_MIDI_SUCCESS);
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_off, 100), BLE_MIDI_SUCCESS);
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_on, 100), BLE_MIDI_ERROR_PACKET_FULL);
+	struct ble_midi_writer_t packet;
+	ble_midi_writer_init(&packet, 1, 1);
+	packet.tx_buf_max_size = 8;
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_on, 100), BLE_MIDI_SUCCESS);
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_off, 100), BLE_MIDI_SUCCESS);
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_on, 100), BLE_MIDI_ERROR_PACKET_FULL);
 
 	uint8_t expected_payload_1[] = {
 			0x81, 0xe4, 0x90, 0x69, 0x7f, 0x69, 0x00};
 	assert_payload_equals(&packet, expected_payload_1, sizeof(expected_payload_1));
 
-	ble_midi_packet_reset(&packet);
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_on, 100), BLE_MIDI_SUCCESS);
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_off, 100), BLE_MIDI_SUCCESS);
+	ble_midi_writer_reset(&packet);
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_on, 100), BLE_MIDI_SUCCESS);
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_off, 100), BLE_MIDI_SUCCESS);
 	uint8_t expected_payload_2[] = {
 			0x81, 0xe4, 0x90, 0x69, 0x7f, 0x69, 0x00};
 	assert_payload_equals(&packet, expected_payload_2, sizeof(expected_payload_2));
@@ -441,13 +441,13 @@ void test_disable_note_off_as_note_on() {
 	printf("Note off messages should be preserved if corresponding flag is set\n");
 	uint8_t note_on[] = {0x90, 0x69, 0x7f};
 	uint8_t note_off[] = {0x80, 0x69, 0x7f};
-	struct ble_midi_packet_t packet;
-	ble_midi_packet_init(&packet, 1, 0);
-	packet.max_size = 20;
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_on, 100), BLE_MIDI_SUCCESS);
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_off, 100), BLE_MIDI_SUCCESS);
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_on, 101), BLE_MIDI_SUCCESS);
-	assert_error_code(ble_midi_packet_add_msg(&packet, note_off, 101), BLE_MIDI_SUCCESS);
+	struct ble_midi_writer_t packet;
+	ble_midi_writer_init(&packet, 1, 0);
+	packet.tx_buf_max_size = 20;
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_on, 100), BLE_MIDI_SUCCESS);
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_off, 100), BLE_MIDI_SUCCESS);
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_on, 101), BLE_MIDI_SUCCESS);
+	assert_error_code(ble_midi_writer_add_msg(&packet, note_off, 101), BLE_MIDI_SUCCESS);
 	uint8_t expected_payload[] = {
 		0x81,
 		0xe4, 0x90, 0x69, 0x7f,
@@ -460,8 +460,8 @@ void test_disable_note_off_as_note_on() {
 
 void test_sysex_continuation() {
 	printf("Valid sysex continuation packets should be recognized as such\n");
-	struct ble_midi_packet_t packet;
-	ble_midi_packet_init(&packet, 1, 1);
+	struct ble_midi_writer_t packet;
+	ble_midi_writer_init(&packet, 1, 1);
 
 	uint8_t payload_1[] =	{
 			0x83,										// packet header
