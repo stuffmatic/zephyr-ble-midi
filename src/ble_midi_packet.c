@@ -138,9 +138,8 @@ void ble_midi_packet_init(struct ble_midi_packet_t *packet,
 {
 	packet->max_size = 0;
 	packet->size = 0;
+	packet->prev_running_status_byte = 0;
 	packet->prev_status_byte = 0;
-	packet->next_rs_message_needs_timestamp = 0;
-	packet->is_running_status = 0;
 	packet->prev_timestamp = 0;
 	packet->in_sysex_msg = 0;
 	packet->note_off_as_note_on = note_off_as_note_on;
@@ -153,9 +152,8 @@ void ble_midi_packet_reset(struct ble_midi_packet_t *packet)
 	packet->prev_timestamp = 0;
 
 	/* The end of a BLE packet cancels running status. */
+	packet->prev_running_status_byte = 0;
 	packet->prev_status_byte = 0;
-	packet->next_rs_message_needs_timestamp = 0;
-	packet->is_running_status = 0;
 }
 
 int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
@@ -203,11 +201,10 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 	}
 
 	/* Use running status? */
-	uint8_t prev_status_byte = packet->prev_status_byte;
-	uint8_t next_rs_message_needs_timestamp = packet->next_rs_message_needs_timestamp;
-	uint8_t is_running_status = packet->is_running_status;
+	uint8_t prev_running_status_byte = packet->prev_running_status_byte;
+
 	if (!packet->running_status_enabled) {
-		is_running_status = 0;
+		prev_running_status_byte = 0;
 	}
 	else if (is_channel_message(status_byte)) {
 		if ((status_byte >> 4) == 0x8 && packet->note_off_as_note_on) {
@@ -216,15 +213,8 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 			status_byte = 0x90 | (status_byte & 0xf);
 			data_bytes[1] = 0; /* Velocity 0 */
 		}
-		if (status_byte == prev_status_byte) {
-			/* Start or continue running status sequence */
-			is_running_status = 1;
-		}
-		else {
-			/* Cancel running status */
-			is_running_status = 0;
-		}
-		prev_status_byte = status_byte;
+
+		prev_running_status_byte = status_byte;
 	}
 	else if (is_realtime_message(status_byte) || is_system_common_message(status_byte)) {
 		/*
@@ -233,14 +223,10 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 		   interspersed between Running Status MIDI messages. However, a timestamp byte
 		   must precede the Running Status MIDI message that follows.
 		*/
-		if (is_running_status) {
-			next_rs_message_needs_timestamp = 1;
-		}
 	}
 	else {
 		/* Cancel running status */
-		is_running_status = 0;
-		prev_status_byte = 0;
+		prev_running_status_byte = 0;
 	}
 
 	uint8_t bytes_to_append[5] = {0, 0, 0, 0, 0 };
@@ -255,17 +241,13 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 	/* Skip the message timestamp if we're in a running status sequence, the timestamp
 	   hasn't changed and we're dealing with a channel message that was not preceded
 	   by a system realtime/common message. */
+	int is_running_status = status_byte == packet->prev_running_status_byte;
 	uint16_t prev_timestamp = packet->prev_timestamp;
-	int skip_msg_timestamp = is_running_status && timestamp == prev_timestamp && is_channel_message(status_byte) && !next_rs_message_needs_timestamp;
+	int prev_msg_is_sys_rt_or_cmn = is_system_common_message(packet->prev_status_byte) || is_realtime_message(packet->prev_status_byte);
+	int skip_msg_timestamp = is_running_status && timestamp == prev_timestamp && is_channel_message(status_byte) && !prev_msg_is_sys_rt_or_cmn;
 	if (!skip_msg_timestamp) {
 		bytes_to_append[num_bytes_to_append] = message_timestamp(timestamp);
 		num_bytes_to_append++;
-	}
-
-	if (next_rs_message_needs_timestamp && is_channel_message(status_byte)) {
-		/* Just added a required timestamp byte for a running status channel
-		   message following a system common/real time message. */
-		next_rs_message_needs_timestamp = 0;
 	}
 
 	/* Skip the status byte if we're in a running status sequence and this is a channel message */
@@ -290,10 +272,9 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 		}
 
 		/* Update packet state */
-		packet->prev_status_byte = prev_status_byte;
+		packet->prev_status_byte = status_byte;
+		packet->prev_running_status_byte = prev_running_status_byte;
 		packet->prev_timestamp = timestamp;
-		packet->next_rs_message_needs_timestamp = next_rs_message_needs_timestamp;
-		packet->is_running_status = is_running_status;
 
 		return BLE_MIDI_SUCCESS;
 	}
@@ -355,8 +336,7 @@ int ble_midi_packet_add_sysex_msg(
 	}
 
 	/* Cancel running status */
-	packet->is_running_status = 0;
-	packet->prev_status_byte = 0;
+	packet->prev_running_status_byte = 0;
 
 	return BLE_MIDI_SUCCESS;
 }
@@ -394,8 +374,7 @@ int ble_midi_packet_start_sysex_msg(struct ble_midi_packet_t *packet, uint16_t t
 	int result = append_status_byte_with_timestamp(packet, timestamp, 0xf7);
 	if (result == BLE_MIDI_SUCCESS) {
 		packet->in_sysex_msg = 1;
-		packet->is_running_status = 0;
-		packet->prev_status_byte = 0;
+		packet->prev_running_status_byte = 0;
 	}
 	return result;
 }

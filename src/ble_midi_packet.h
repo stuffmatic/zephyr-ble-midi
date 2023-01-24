@@ -25,15 +25,8 @@ struct ble_midi_packet_t
 	/* Current payload size. Must not be greater than max_size. */
 	uint16_t size;
 	/* Status byte of the previous MIDI message. Used for running status. */
+	uint8_t prev_running_status_byte;
 	uint8_t prev_status_byte;
-	/* Indicates if the next running status message should be preceded by a
-	   timestamp byte, which is required for running status messages following
-	   system real time or system common messages (which don't cancel running status).
-	   */
-	uint8_t next_rs_message_needs_timestamp;
-	/* Indicates if we're in a running status sequence. Used to keep track of
-	   running status in the presence of system common or system real time messages.  */
-	uint8_t is_running_status;
 	/* The timestamp of the previously added message. Used to determine if timestamp bytes
 	   should be added to running status messages. */
 	uint16_t prev_timestamp;
