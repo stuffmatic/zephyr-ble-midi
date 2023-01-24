@@ -458,6 +458,36 @@ void test_disable_note_off_as_note_on() {
 	assert_payload_equals(&packet, expected_payload, sizeof(expected_payload));
 }
 
+void test_sysex_continuation() {
+	printf("Valid sysex continuation packets should be recognized as such\n");
+	struct ble_midi_packet_t packet;
+	ble_midi_packet_init(&packet, 1, 1);
+
+	uint8_t payload_1[] =	{
+			0x83,										// packet header
+			0x01, 0x02, 0x03,				// sysex data
+			0xe6, 0xfe,							// system rt
+			0xf0, 0xf0,							// sysex end
+			0xfa, 0x90, 0x69, 0x7f	// note on
+	};
+	num_parsed_messages = 0;
+	ble_midi_parse_packet(payload_1, sizeof(payload_1), midi_message_cb, sysex_start_cb, sysex_data_cb, sysex_end_cb);
+	assert_equals(parsed_messages[0].bytes[0], 0x01);
+	assert_equals(parsed_messages[1].bytes[0], 0x02);
+
+	uint8_t payload_2[] =	{
+			0x83,										// packet header
+			0xe6, 0xfe,							// system rt
+			0x01, 0x02, 0x03,				// sysex data
+			0xf0, 0xf0,							// sysex end
+			0xfa, 0x90, 0x69, 0x7f	// note on
+	};
+	num_parsed_messages = 0;
+	ble_midi_parse_packet(payload_2, sizeof(payload_2), midi_message_cb, sysex_start_cb, sysex_data_cb, sysex_end_cb);
+	assert_equals(parsed_messages[0].bytes[0], 0xfe);
+	assert_equals(parsed_messages[1].bytes[0], 0x01);
+}
+
 int main(int argc, char *argv[])
 {
 	test_running_status_disabled();
@@ -470,4 +500,5 @@ int main(int argc, char *argv[])
 	test_packet_end_cancels_running_status();
 	test_multi_packet_sysex();
 	test_disable_note_off_as_note_on();
+	test_sysex_continuation();
 }

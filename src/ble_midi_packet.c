@@ -507,8 +507,6 @@ static int is_sysex_continuation(struct ble_midi_parser_t *parser, int *is_sysex
 		}
 	}
 
-	/* If we made it here, the packet consists of only real time messages
-	and could be either a sysex continuation or a "regular" packet. Assume the latter. */
 	*is_sysex = 0;
 
 	return BLE_MIDI_SUCCESS;
