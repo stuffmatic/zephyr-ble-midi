@@ -39,17 +39,22 @@ struct ble_midi_packet_t
 	uint16_t prev_timestamp;
 	/* */
 	uint8_t in_sysex_msg;
+	int running_status_enabled;
+	int note_off_as_note_on;
 };
 
-void ble_midi_packet_init(struct ble_midi_packet_t *packet);
+void ble_midi_packet_init(struct ble_midi_packet_t *packet,
+		  										int running_status_enabled,
+				  								int note_off_as_note_on);
+
 void ble_midi_packet_reset(struct ble_midi_packet_t *packet);
 
 /* Append a non-sysex MIDI message. */
 int ble_midi_packet_add_msg(
     struct ble_midi_packet_t *packet,
     uint8_t *bytes,	/* 3 bytes, zero padded */
-    uint16_t timestamp, /* 13 bit, wrapped ms timestamp */
-    int running_status_enabled);
+    uint16_t timestamp /* 13 bit, wrapped ms timestamp */
+);
 
 /* Append an entire sysex MIDI message. Fails if the message does not fit into the packet. */
 int ble_midi_packet_add_sysex_msg(
@@ -77,8 +82,8 @@ int ble_midi_packet_end_sysex_msg(struct ble_midi_packet_t *packet, uint16_t tim
 
 typedef void (*midi_message_cb_t)(uint8_t *bytes, uint8_t num_bytes, uint16_t timestamp);
 typedef void (*sysex_data_cb_t)(uint8_t data_byte);
-typedef void (*sysex_start_cb_t)();
-typedef void (*sysex_end_cb_t)();
+typedef void (*sysex_start_cb_t)(uint16_t timestamp);
+typedef void (*sysex_end_cb_t)(uint16_t timestamp);
 
 int ble_midi_parse_packet(
     uint8_t *packet,

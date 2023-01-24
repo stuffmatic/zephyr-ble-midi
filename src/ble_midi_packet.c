@@ -133,7 +133,9 @@ uint8_t message_timestamp(uint16_t timestamp)
 	return 0x80 | (0x7f & timestamp);
 }
 
-void ble_midi_packet_init(struct ble_midi_packet_t *packet)
+void ble_midi_packet_init(struct ble_midi_packet_t *packet,
+											    int running_status_enabled,
+				  								int note_off_as_note_on)
 {
 	packet->max_size = 0;
 	packet->size = 0;
@@ -142,6 +144,8 @@ void ble_midi_packet_init(struct ble_midi_packet_t *packet)
 	packet->is_running_status = 0;
 	packet->prev_timestamp = 0;
 	packet->in_sysex_msg = 0;
+	packet->note_off_as_note_on = note_off_as_note_on;
+	packet->running_status_enabled = running_status_enabled;
 }
 
 void ble_midi_packet_reset(struct ble_midi_packet_t *packet)
@@ -156,7 +160,7 @@ void ble_midi_packet_reset(struct ble_midi_packet_t *packet)
 }
 
 int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
-														uint8_t *message_bytes, uint16_t timestamp, int running_status_enabled)
+														uint8_t *message_bytes, uint16_t timestamp)
 {
 	/* First, handle special case of system real time message in a sysex message */
 	if (packet->in_sysex_msg) {
@@ -203,11 +207,11 @@ int ble_midi_packet_add_msg(struct ble_midi_packet_t *packet,
 	uint8_t prev_status_byte = packet->prev_status_byte;
 	uint8_t next_rs_message_needs_timestamp = packet->next_rs_message_needs_timestamp;
 	uint8_t is_running_status = packet->is_running_status;
-	if (!running_status_enabled) {
+	if (!packet->running_status_enabled) {
 		is_running_status = 0;
 	}
 	else if (is_channel_message(status_byte)) {
-		if ((status_byte >> 4) == 0x8) {
+		if ((status_byte >> 4) == 0x8 && packet->note_off_as_note_on) {
 			/* This is a note off message. Represent it as a note
 			    on with velocity 0 to increase running status efficiency. */
 			status_byte = 0x90 | (status_byte & 0xf);
@@ -517,7 +521,7 @@ int ble_midi_parse_packet(
     midi_message_cb_t message_cb,
     sysex_start_cb_t sysex_start_cb,
     sysex_data_cb_t sysex_data_cb,
-	sysex_end_cb_t sysex_end_cb
+		sysex_end_cb_t sysex_end_cb
 )
 {
 	/* Create a parser instance keeping track of the current state. */
@@ -565,11 +569,11 @@ int ble_midi_parse_packet(
 					return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
 				}
 				if (is_realtime_message(status)) {
-					message_cb(&status, 1, 999); // TODO: timestamp
+					message_cb(&status, 1, timestamp_ms(packet_header, byte));
 				} else if (status == 0xf0) {
 					/* End of sysex */
 					parser.in_sysex_msg = 0;
-					sysex_end_cb(); // TODO: timestamp
+					sysex_end_cb(timestamp_ms(packet_header, byte));
 				} else {
 					/* Invalid status byte. Ignore. */
 				}
@@ -627,7 +631,7 @@ int ble_midi_parse_packet(
 					if (byte_1 == 0xf7) {
 						/* Sysex start */
 						parser.in_sysex_msg = 1;
-						sysex_start_cb();
+						sysex_start_cb(timestamp_ms(packet_header, byte_0));
 					}
 					else {
 						uint8_t num_data_bytes = message_size(byte_1) - 1;
