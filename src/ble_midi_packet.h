@@ -1,5 +1,5 @@
-#ifndef _BLE_MIDI_PACKET_H_
-#define _BLE_MIDI_PACKET_H_
+#ifndef _ble_midi_packet_H_
+#define _ble_midi_packet_H_
 
 #include <stdint.h>
 
@@ -10,14 +10,17 @@
 #define BLE_MIDI_ERROR_INVALID_DATA_BYTE -4
 #define BLE_MIDI_ERROR_INVALID_STATUS_BYTE -5
 #define BLE_MIDI_ERROR_INVALID_MESSAGE -6
+#define BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA -7
+#define BLE_MIDI_ERROR_UNEXPECTED_DATA_BYTE -8
+#define BLE_MIDI_ERROR_UNEXPECTED_STATUS_BYTE -9
 
-#define BLE_MIDI_PACKET_MAX_SIZE 247
+#define BLE_MIDI_TX_PACKET_MAX_SIZE 247 // TODO: MTU - 3 according to spec
 
-struct ble_midi_packet
+struct ble_midi_packet_t
 {
 	/* The payload to send. */
-	uint8_t bytes[BLE_MIDI_PACKET_MAX_SIZE];
-	/* Current maximum payload size. Must not be greater than BLE_MIDI_PACKET_MAX_SIZE */
+	uint8_t bytes[BLE_MIDI_TX_PACKET_MAX_SIZE];
+	/* Current maximum payload size. Must not be greater than BLE_MIDI_TX_PACKET_MAX_SIZE */
 	uint16_t max_size;
 	/* Current payload size. Must not be greater than max_size. */
 	uint16_t size;
@@ -38,55 +41,52 @@ struct ble_midi_packet
 	uint8_t in_sysex_msg;
 };
 
-void ble_midi_packet_init(struct ble_midi_packet *packet);
-void ble_midi_packet_reset(struct ble_midi_packet *packet);
+void ble_midi_packet_init(struct ble_midi_packet_t *packet);
+void ble_midi_packet_reset(struct ble_midi_packet_t *packet);
 
 /* Append a non-sysex MIDI message. */
-int ble_midi_packet_append_msg(
-    struct ble_midi_packet *packet,
+int ble_midi_packet_add_msg(
+    struct ble_midi_packet_t *packet,
     uint8_t *bytes,	/* 3 bytes, zero padded */
     uint16_t timestamp, /* 13 bit, wrapped ms timestamp */
     int running_status_enabled);
 
 /* Append an entire sysex MIDI message. Fails if the message does not fit into the packet. */
-int ble_midi_packet_append_sysex_msg(
-    struct ble_midi_packet *packet,
+int ble_midi_packet_add_sysex_msg(
+    struct ble_midi_packet_t *packet,
     uint8_t *bytes,
     uint32_t num_bytes,
     uint16_t timestamp);
 
 /* Start a sysex message, possibly spanning multiple messages. */
-int ble_midi_packet_start_sysex_msg(struct ble_midi_packet *packet, uint16_t timestamp);
-
-/* End a sysex message, possibly spanning multiple messages. */
-int ble_midi_packet_end_sysex_msg(struct ble_midi_packet *packet, uint16_t timestamp);
+int ble_midi_packet_start_sysex_msg(struct ble_midi_packet_t *packet, uint16_t timestamp);
 
 /**
- * Append bytes to an ongoing sysex message, possibly spanning multiple packets.
+ * Append data bytes to an ongoing sysex message, possibly spanning multiple packets.
  * The chunk must not contain sysex start/end and system real time status bytes.
  * Returns the number of bytes appended.
  */
-int ble_midi_packet_append_sysex_data(
-    struct ble_midi_packet *packet,
+int ble_midi_packet_add_sysex_data(
+    struct ble_midi_packet_t *packet,
     uint8_t *data_bytes,
     uint32_t num_data_bytes,
     uint16_t timestamp);
 
-typedef void (*midi_message_cb)(uint8_t *bytes, uint8_t num_bytes, uint16_t timestamp);
+/* End a sysex message, possibly spanning multiple messages. */
+int ble_midi_packet_end_sysex_msg(struct ble_midi_packet_t *packet, uint16_t timestamp);
 
-typedef void (*sysex_cb)(uint8_t *bytes, uint8_t num_bytes, uint32_t sysex_ended);
+typedef void (*midi_message_cb_t)(uint8_t *bytes, uint8_t num_bytes, uint16_t timestamp);
+typedef void (*sysex_data_cb_t)(uint8_t data_byte);
+typedef void (*sysex_start_cb_t)();
+typedef void (*sysex_end_cb_t)();
 
-struct ble_midi_parser {
-	uint8_t in_sysex_msg;
-	uint16_t prev_timestamp;
-};
-
-void ble_midi_packet_parse(
-    struct ble_midi_parser *parser,
+int ble_midi_parse_packet(
     uint8_t *packet,
     uint32_t num_bytes,
-    midi_message_cb message_cb,
-    sysex_cb sysex_cb
+    midi_message_cb_t message_cb,
+		sysex_start_cb_t sysex_start_cb,
+    sysex_data_cb_t sysex_data_cb,
+		sysex_end_cb_t sysex_end_cb
 );
 
 #endif
