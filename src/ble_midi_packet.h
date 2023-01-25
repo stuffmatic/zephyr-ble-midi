@@ -25,7 +25,7 @@ typedef void (*sysex_end_cb_t)(uint16_t timestamp);
  * Parses an entire BLE MIDI packet.
  */
 int ble_midi_parse_packet(
-    uint8_t *rx_packet,
+    uint8_t *rx_buf,
     uint32_t num_bytes,
     midi_message_cb_t message_cb,
 		sysex_start_cb_t sysex_start_cb,

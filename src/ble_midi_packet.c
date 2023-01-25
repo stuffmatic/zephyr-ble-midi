@@ -137,7 +137,7 @@ void ble_midi_writer_init(struct ble_midi_writer_t *writer,
 											    int running_status_enabled,
 				  								int note_off_as_note_on)
 {
-	writer->tx_buf_max_size = 0;
+	writer->tx_buf_max_size = BLE_MIDI_TX_PACKET_MAX_SIZE;
 	writer->tx_buf_size = 0;
 	writer->prev_running_status_byte = 0;
 	writer->prev_status_byte = 0;
@@ -493,8 +493,8 @@ static int is_sysex_continuation(struct ble_midi_parser_t *parser, int *is_sysex
 }
 
 int ble_midi_parse_packet(
-    uint8_t *rx_packet,
-    uint32_t rx_packet_size,
+    uint8_t *rx_buf,
+    uint32_t rx_buf_size,
     midi_message_cb_t message_cb,
     sysex_start_cb_t sysex_start_cb,
     sysex_data_cb_t sysex_data_cb,
@@ -505,8 +505,8 @@ int ble_midi_parse_packet(
 	struct ble_midi_parser_t parser = {
 		.in_sysex_msg = 0,
 		.prev_timestamp_byte = 0,
-		.rx_buf = rx_packet,
-		.rx_buf_size = rx_packet_size,
+		.rx_buf = rx_buf,
+		.rx_buf_size = rx_buf_size,
 		.read_pos = 0,
 		.running_status_byte = 0
 	};
