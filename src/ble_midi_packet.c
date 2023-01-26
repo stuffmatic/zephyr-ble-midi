@@ -35,17 +35,6 @@ static uint32_t is_data_byte(uint8_t byte)
 	return byte < 0x80;
 }
 
-static uint32_t is_sysex_message(uint8_t status_byte)
-{
-	switch (status_byte) {
-	case 0xf7: /* Sysex start */
-	case 0xf0: /* Sysex end */
-		return 1;
-	}
-
-	return 0;
-}
-
 static uint32_t is_realtime_message(uint8_t status_byte)
 {
 	switch (status_byte) {
