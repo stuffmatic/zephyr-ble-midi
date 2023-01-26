@@ -8,7 +8,7 @@ typedef struct
     uint16_t timestamp;
 } midi_msg_t;
 
-static void log_buffer(uint8_t *bytes, int num_bytes)
+void log_buffer(uint8_t *bytes, int num_bytes)
 {
     for (int i = 0; i < num_bytes; i++)
     {
@@ -552,6 +552,25 @@ void test_sysex_continuation()
     assert_equals(parsed_messages[1].bytes[0], 0x01);
 }
 
+void test_null_parse_callbacks() {
+    printf("Passing NULL parse callbacks should not segfault\n\n");
+    uint8_t payload[] = {
+        0x80,
+        0xe4, 0x90,
+        0x69, 0x7f, 0x69, 0x00,
+        0xe4, 0xf7, 0x01, 0x02, 0x03,
+        0xe4, 0xf0,
+        0xe4, 0x90, 0x69, 0x7f
+    };
+    struct ble_midi_parse_cb_t cb = {
+        .midi_message_cb = NULL,
+        .sysex_data_cb = NULL,
+        .sysex_end_cb = NULL,
+        .sysex_start_cb = NULL
+    };
+    ble_midi_parse_packet(payload, sizeof(payload), &cb);
+}
+
 int main(int argc, char *argv[])
 {
     test_timestamp_byte_wrapping();
@@ -566,4 +585,5 @@ int main(int argc, char *argv[])
     test_multi_packet_sysex();
     test_disable_note_off_as_note_on();
     test_sysex_continuation();
+    test_null_parse_callbacks();
 }
