@@ -646,7 +646,7 @@ enum ble_midi_error_t ble_midi_parse_packet(
 								cb->midi_message_cb(message_bytes, 1 + num_data_bytes, timestamp_ms(timestamp_high_bits, byte_0));
 							}
 						} else {
-							/* Ignore. TODO: how to handle? */
+							return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
 						}
 					}
 				}

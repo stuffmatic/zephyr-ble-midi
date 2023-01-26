@@ -1,7 +1,9 @@
+#include <zephyr/init.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/uuid.h>
+#include <mpsl_radio_notification.h>
 
 #include "ble_midi.h"
 #include "ble_midi_packet.h"
@@ -15,10 +17,21 @@
 #define BLE_MIDI_RUNNING_STATUS_ENABLED 0
 #endif
 
+#ifdef CONFIG_BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON
+#define BLE_MIDI_NOTE_OFF_AS_NOTE_ON 1
+#else
+#define BLE_MIDI_NOTE_OFF_AS_NOTE_ON 0
+#endif
+
+struct ble_midi_writer_t tx_writer;
+
 static struct ble_midi_callbacks user_callbacks = {
-    .midi_message_cb = NULL,
-	.sysex_cb  = NULL,
     .available_cb = NULL,
+		.packet_tx_cb = NULL,
+    .midi_message_cb = NULL,
+		.sysex_start_cb = NULL,
+		.sysex_data_cb = NULL,
+		.sysex_end_cb = NULL,
 };
 
 static ssize_t midi_read_cb(struct bt_conn *conn,
@@ -53,12 +66,17 @@ static ssize_t midi_write_cb(struct bt_conn *conn,
 			     const void *buf, uint16_t len,
 			     uint16_t offset, uint8_t flags)
 {
-    log_buffer("MIDI rx:", ((uint8_t *)buf)[offset], len);
-    ble_midi_packet_parse(
-        ((uint8_t *)buf)[offset],
+		struct ble_midi_parse_cb_t parse_cb = {
+			.midi_message_cb = user_callbacks.midi_message_cb,
+			.sysex_start_cb = user_callbacks.sysex_start_cb,
+			.sysex_data_cb = user_callbacks.sysex_data_cb,
+			.sysex_end_cb = user_callbacks.sysex_end_cb
+		};
+    log_buffer("MIDI rx:", &((uint8_t *)buf)[offset], len);
+    ble_midi_parse_packet(
+        &((uint8_t *)buf)[offset],
         len,
-        user_callbacks.midi_message_cb ? user_callbacks.midi_message_cb : dummy_midi_message_cb,
-        user_callbacks.sysex_cb ? user_callbacks.sysex_cb : dummy_sysex_cb
+        &parse_cb
     );
 }
 
@@ -67,6 +85,7 @@ static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr,
 {
     /* MIDI I/O characteristic notification has been turned on.
        Notify the user that BLE MIDI is available. */
+		printk("midi_ccc_cfg_changed %d\n", value);
 	if (user_callbacks.available_cb) {
 		user_callbacks.available_cb(value == BT_GATT_CCC_NOTIFY);
 	}
@@ -95,7 +114,7 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service,
 #define INTERVAL_MIN	0x6	/* 7.5 ms */
 #define INTERVAL_MAX	0x6	/* 7.5 ms */
 static struct bt_le_conn_param *conn_param =
-	BT_LE_CONN_PARAM(INTERVAL_MIN, INTERVAL_MAX, 0, 36);
+	BT_LE_CONN_PARAM(INTERVAL_MIN, INTERVAL_MAX, 0, 200);
 // static struct bt_conn_le_phy_param *phy_param = BT_CONN_LE_PHY_PARAM_2M;
 
 /* static void mtu_exchange_func(struct bt_conn *conn, uint8_t att_err,
@@ -117,6 +136,11 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 {
 	struct bt_conn_info info = {0};
 	int e = bt_conn_get_info(conn, &info);
+	if (tx_writer.tx_buf_size > tx) {
+		// TODO: warn(lowering packet max size)
+	}
+	// TODO: From the spec: In transmitting MIDI data over Bluetooth, a series of MIDI messages of various sizes must be encoded into packets no larger than the negotiated MTU minus 3 bytes (typically 20 bytes or larger.)
+	tx_writer.tx_buf_max_size = tx > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : tx;
 	printk("Updated MTU: TX: %d RX: %d bytes.\n", tx, rx);
 }
 
@@ -124,35 +148,28 @@ static struct bt_gatt_cb gatt_callbacks = {.att_mtu_updated = mtu_updated};
 
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
-    /* Connection established. Don't notify the user that BLE MIDI is
-       available until MIDI I/O characteristic notification has been turned on. */
-
-		int e;
+		/* Request smallest possible connection interval, if not already set.
+		   NOTE: The actual update request is sent after 5 seconds as required
+			 by the Bluetooth Core specification spec. See BT_CONN_PARAM_UPDATE_TIMEOUT. */
 		struct bt_conn_info info = {0};
-		e = bt_conn_get_info(conn, &info);
-		/* if (info.le.phy->rx_phy != BT_GAP_LE_PHY_2M || info.le.phy->tx_phy != BT_GAP_LE_PHY_2M) {
-			e = bt_conn_le_phy_update(conn, phy_param);
-		} */
+		int e = bt_conn_get_info(conn, &info);
 		if (info.le.interval != INTERVAL_MIN) {
 			e = bt_conn_le_param_update(conn, conn_param);
+			printk("bt_conn_le_param_update rc %d\n", e);
 		}
 
-		/* struct bt_conn_le_data_len_param data_len = {
-			.tx_max_len = 247,
-			.tx_max_time = info.le.data_len->tx_max_time
-		};
-		if (info.le.data_len->tx_max_len != data_len.tx_max_len) {
-			e = bt_conn_le_data_len_update(conn, &data_len);
-			__ASSERT(e == 0, "");
-		} */
+		ble_midi_writer_init(&tx_writer, BLE_MIDI_RUNNING_STATUS_ENABLED, BLE_MIDI_NOTE_OFF_AS_NOTE_ON);
 
+		irq_enable(TEMP_IRQn);
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
     /* Device disconnected. Notify the user that BLE MIDI is not available. */
     if (user_callbacks.available_cb) {
+			// TODO: this should really happen when subscribtion stops?
         user_callbacks.available_cb(0);
+				irq_disable(TEMP_IRQn);
     }
 }
 
@@ -189,6 +206,24 @@ static void le_phy_updated(struct bt_conn *conn,
 	       info->tx_max_time, info->rx_max_len, info->rx_max_time);
 }*/
 
+#define RADIO_NOTIF_PRIORITY 1
+static void radio_notif_handler(void)
+{
+	// k_work_submit_to_queue(&ble_tx_work_q, &ble_tx_work);
+}
+
+static void radio_notif_setup()
+{
+	int rc = mpsl_radio_notification_cfg_set(
+		MPSL_RADIO_NOTIFICATION_TYPE_INT_ON_ACTIVE,
+		MPSL_RADIO_NOTIFICATION_DISTANCE_420US, TEMP_IRQn);
+	IRQ_CONNECT(TEMP_IRQn, RADIO_NOTIF_PRIORITY, radio_notif_handler, NULL,
+		    0);
+	__ASSERT(rc == 0, "mpsl_radio_notification_cfg_set failed");
+}
+
+SYS_INIT(radio_notif_setup, POST_KERNEL, 45);
+
 BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {
     .connected = on_connected,
     .disconnected = on_disconnected,
@@ -198,25 +233,77 @@ BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {
 		// .le_data_len_updated = le_data_length_updated
 };
 
+
+
 void ble_midi_init(struct ble_midi_callbacks *callbacks) {
 		bt_gatt_cb_register(&gatt_callbacks);
-
     user_callbacks.available_cb = callbacks->available_cb;
-    user_callbacks.sysex_cb = callbacks->sysex_cb;
+		user_callbacks.packet_tx_cb = callbacks->packet_tx_cb;
     user_callbacks.midi_message_cb = callbacks->midi_message_cb;
+    user_callbacks.sysex_start_cb = callbacks->sysex_start_cb;
+		user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
+		user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
 }
 
-int ble_midi_tx(uint8_t *bytes)
+static void on_notify_done(struct bt_conn *conn, void *user_data)
 {
-	struct ble_midi_packet packet;
-	ble_midi_packet_reset(&packet);
-	ble_midi_packet_add_message(&packet, bytes, 0, BLE_MIDI_RUNNING_STATUS_ENABLED);
-
-    // USE notify cb
-	int rc = bt_gatt_notify(NULL, &ble_midi_service.attrs[1], packet.bytes, packet.size);
-    if (rc == 0) {
-        // log_buffer("MIDI tx:", packet.bytes, packet.size);
-    }
-
-	return rc == -ENOTCONN ? 0 : rc;
+	/* BLE MIDI packet sent. */
+	if (user_callbacks.packet_tx_cb) {
+		user_callbacks.packet_tx_cb();
+	}
 }
+
+int send_packet(uint8_t *bytes, int num_bytes)
+{
+	struct bt_gatt_notify_params notify_params = {
+		.attr = &ble_midi_service.attrs[1],
+		.data = bytes,
+		.len = num_bytes,
+		.func = on_notify_done,
+	};
+	int rc = bt_gatt_notify_cb(NULL, &notify_params);
+	return rc == -ENOTCONN ? 0 : rc; // TODO: what does this do?
+}
+
+uint16_t timestamp_ms() {
+	return k_ticks_to_ms_near64(k_uptime_ticks()) & 0x1FFF;
+}
+
+int ble_midi_tx_msg(uint8_t *bytes)
+{
+	#ifdef CONFIG_BLE_MIDI_SIMPLE_TX
+	ble_midi_writer_reset(&tx_writer);
+	ble_midi_writer_add_msg(&tx_writer, bytes, timestamp_ms());
+	return send_packet(tx_writer.tx_buf, tx_writer.tx_buf_size);
+	#else
+	ble_midi_writer_add_msg(&tx_writer, bytes, timestamp_ms());
+	#endif
+}
+
+int ble_midi_tx_sysex_msg(uint8_t* bytes, int num_bytes)
+{
+	#ifdef CONFIG_BLE_MIDI_SIMPLE_TX
+	ble_midi_writer_reset(&tx_writer);
+	ble_midi_writer_add_sysex_msg(&tx_writer, bytes, num_bytes, timestamp_ms());
+	return send_packet(tx_writer.tx_buf, tx_writer.tx_buf_size);
+	#else
+	return ble_midi_writer_add_sysex_msg(&tx_writer, bytes, num_bytes, timestamp_ms());
+	#endif
+}
+
+#ifndef CONFIG_BLE_MIDI_SIMPLE_TX
+int ble_midi_tx_sysex_start()
+{
+	return ble_midi_writer_start_sysex_msg(&tx_writer, timestamp_ms());
+}
+
+int ble_midi_tx_sysex_data(uint8_t* bytes, int num_bytes)
+{
+	return ble_midi_writer_add_sysex_data(&tx_writer, bytes, num_bytes, timestamp_ms());
+}
+
+int ble_midi_tx_sysex_end()
+{
+	return ble_midi_writer_end_sysex_msg(&tx_writer, timestamp_ms());
+}
+#endif
