@@ -626,8 +626,9 @@ enum ble_midi_error_t ble_midi_parse_packet(
 						}
 					}
 					else {
-						uint8_t num_data_bytes = message_size(byte_1) - 1;
-						if (num_data_bytes >= 0) {
+						uint8_t msg_size = message_size(byte_1);
+						if (msg_size > 0) {
+							uint8_t num_data_bytes = msg_size - 1;
 							uint8_t message_bytes[3] = {byte_1, 0, 0};
 							if (ble_midi_parser_read(&parser, &message_bytes[1], num_data_bytes)) {
 								return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;

@@ -575,6 +575,20 @@ void test_null_parse_callbacks() {
     ble_midi_parse_packet(payload, sizeof(payload), &cb);
 }
 
+static void test_parse_malformed_sysex_message() {
+    printf("Parsing malformed sysex message should not segfault \n\n");
+    /* A payload with a sysex message with swapped start and end status bytes */
+    uint8_t payload[] = {
+        0x81,                   // packet header
+        0xd2, 0xf7,             // sysex end
+        0x01, 0x02, 0x03,       // sysex data
+        0xf0, 0xf0,             // sysex start
+    };
+
+    num_parsed_messages = 0;
+    ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb);
+}
+
 int main(int argc, char *argv[])
 {
     test_timestamp_byte_wrapping();
@@ -589,5 +603,6 @@ int main(int argc, char *argv[])
     test_multi_packet_sysex();
     test_disable_note_off_as_note_on();
     test_sysex_continuation();
+    test_parse_malformed_sysex_message();
     test_null_parse_callbacks();
 }
