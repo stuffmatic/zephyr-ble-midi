@@ -2,6 +2,10 @@
 #include <assert.h>
 #include "../src/ble_midi_packet.h"
 
+#define SYSEX_START 0xf0
+#define SYSEX_END 0xf7
+
+
 typedef struct
 {
     uint8_t bytes[3];
@@ -119,7 +123,7 @@ void midi_message_cb(uint8_t *bytes, uint8_t num_bytes, uint16_t timestamp)
 void sysex_start_cb(uint16_t timestamp)
 {
     midi_msg_t *msg = &parsed_messages[num_parsed_messages];
-    msg->bytes[0] = 0xf7;
+    msg->bytes[0] = SYSEX_START;
     msg->bytes[1] = 0;
     msg->bytes[2] = 0;
     msg->timestamp = timestamp;
@@ -139,7 +143,7 @@ void sysex_data_cb(uint8_t data_byte)
 void sysex_end_cb(uint16_t timestamp)
 {
     midi_msg_t *msg = &parsed_messages[num_parsed_messages];
-    msg->bytes[0] = 0xf0;
+    msg->bytes[0] = SYSEX_END;
     msg->bytes[1] = 0;
     msg->bytes[2] = 0;
     msg->timestamp = timestamp;
@@ -173,11 +177,11 @@ void roundtrip_test(const char *desc,
     for (int i = 0; i < num_messages; i++)
     {
         uint8_t status_byte = messages[i].bytes[0];
-        if (status_byte == 0xf7)
+        if (status_byte == 0xf0)
         {
             assert_success(ble_midi_writer_start_sysex_msg(&writer, messages[i].timestamp));
         }
-        else if (status_byte == 0xf0)
+        else if (status_byte == 0xf7)
         {
             assert_success(ble_midi_writer_end_sysex_msg(&writer, messages[i].timestamp));
         }
@@ -399,20 +403,20 @@ void test_sysex_cancels_running_status()
     midi_msg_t messages[] = {
         {.bytes = {0x90, 0x69, 0x7f}, .timestamp = 100},
         {.bytes = {0x80, 0x69, 0x7f}, .timestamp = 100},
-        {.bytes = {0xf7, 0, 0}, .timestamp = 100},
+        {.bytes = {SYSEX_START, 0, 0}, .timestamp = 100},
         {.bytes = {0x01, 0, 0}, .timestamp = 0},
         {.bytes = {0x02, 0, 0}, .timestamp = 0},
         {.bytes = {0x03, 0, 0}, .timestamp = 0},
-        {.bytes = {0xf0, 0, 0}, .timestamp = 100},
+        {.bytes = {SYSEX_END, 0, 0}, .timestamp = 100},
         {.bytes = {0x90, 0x69, 0x7f}, .timestamp = 100}};
 
     uint8_t expected_payload[] = {
         0x80,                   // packet header
         0xe4, 0x90, 0x69, 0x7f, // note on
         0x69, 0x00,             // note off, running status
-        0xe4, 0xf7,             // sysex start
+        0xe4, SYSEX_START,             // sysex start
         0x01, 0x02, 0x03,       // sysex data
-        0xe4, 0xf0,             // sysex end
+        0xe4, SYSEX_END,             // sysex end
         0xe4, 0x90, 0x69, 0x7f  // note on
     };
     roundtrip_test("Sysex should cancel running status", 1, messages, sizeof(messages) / sizeof(midi_msg_t), expected_payload, sizeof(expected_payload));
@@ -422,22 +426,22 @@ void test_rt_in_sysex()
 {
     midi_msg_t messages[] = {
         {.bytes = {0xb0, 0x12, 0x23}, .timestamp = 200},
-        {.bytes = {0xf7, 0x0, 0x0}, .timestamp = 210},   // sysex start
+        {.bytes = {SYSEX_START, 0x0, 0x0}, .timestamp = 210},   // sysex start
         {.bytes = {0x01, 0, 0}, .timestamp = 0},       // sysex data
         {.bytes = {0x02, 0, 0}, .timestamp = 0},       // sysex data
         {.bytes = {0x03, 0, 0}, .timestamp = 0},       // sysex data
         {.bytes = {0xfe, 0x0, 0x0}, .timestamp = 230},   // real time
-        {.bytes = {0xf0, 0x0, 0x0}, .timestamp = 240},   // sysex end
+        {.bytes = {SYSEX_END, 0x0, 0x0}, .timestamp = 240},   // sysex end
         {.bytes = {0x90, 0x69, 0x7f}, .timestamp = 250}, // note on
     };
 
     uint8_t expected_payload[] = {
         0x81,                   // packet header
         0xc8, 0xb0, 0x12, 0x23, // control change
-        0xd2, 0xf7,             // sysex start
+        0xd2, SYSEX_START,             // sysex start
         0x01, 0x02, 0x03,       // sysex data
         0xe6, 0xfe,             // system rt
-        0xf0, 0xf0,             // sysex end
+        0xf0, SYSEX_END,             // sysex end
         0xfa, 0x90, 0x69, 0x7f  // note on
     };
 
@@ -465,14 +469,14 @@ void test_multi_packet_sysex()
     assert_success(ble_midi_writer_start_sysex_msg(&writer, 100));
     int num_bytes_added = ble_midi_writer_add_sysex_data(&writer, sysex_data, sizeof(sysex_data), 200);
     assert_equals(num_bytes_added, 6);
-    uint8_t expected_payload_1[] = {0x80, 0xe4, 0xf7, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
+    uint8_t expected_payload_1[] = {0x80, 0xe4, 0xf0, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
     assert_payload_equals(&writer, expected_payload_1, sizeof(expected_payload_1));
 
     ble_midi_writer_reset(&writer);
     num_bytes_added = ble_midi_writer_add_sysex_data(&writer, &sysex_data[num_bytes_added], sizeof(sysex_data) - num_bytes_added, 101);
     assert_equals(num_bytes_added, 4);
     assert_success(ble_midi_writer_end_sysex_msg(&writer, 102));
-    uint8_t expected_payload_2[] = {0x80, 0x06, 0x07, 0x08, 0x09, 0xe6, 0xf0};
+    uint8_t expected_payload_2[] = {0x80, 0x06, 0x07, 0x08, 0x09, 0xe6, 0xf7};
     assert_payload_equals(&writer, expected_payload_2, sizeof(expected_payload_2));
 }
 
@@ -531,7 +535,7 @@ void test_sysex_continuation()
         0x80,                  // packet header
         0x01, 0x02, 0x03,      // sysex data
         0xe6, 0xfe,            // system rt
-        0xf0, 0xf0,            // sysex end
+        0xf0, 0xf7,            // sysex end
         0xfa, 0x90, 0x69, 0x7f // note on
     };
     num_parsed_messages = 0;
@@ -543,7 +547,7 @@ void test_sysex_continuation()
         0x81,                  // packet header
         0xe6, 0xfe,            // system rt
         0x01, 0x02, 0x03,      // sysex data
-        0xf0, 0xf0,            // sysex end
+        0xf0, 0xf7,            // sysex end
         0xfa, 0x90, 0x69, 0x7f // note on
     };
     num_parsed_messages = 0;
@@ -558,8 +562,8 @@ void test_null_parse_callbacks() {
         0x80,
         0xe4, 0x90,
         0x69, 0x7f, 0x69, 0x00,
-        0xe4, 0xf7, 0x01, 0x02, 0x03,
-        0xe4, 0xf0,
+        0xe4, 0xf0, 0x01, 0x02, 0x03,
+        0xe4, 0xf7,
         0xe4, 0x90, 0x69, 0x7f
     };
     struct ble_midi_parse_cb_t cb = {

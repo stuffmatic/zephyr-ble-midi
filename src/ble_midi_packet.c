@@ -295,12 +295,12 @@ enum ble_midi_error_t ble_midi_writer_add_sysex_msg(
 	}
 	for (int i = 0; i < num_bytes; i++) {
 		if (i == 0) {
-			if (bytes[i] != 0xf7) {
+			if (bytes[i] != 0xf0) {
 				return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
 			}
 		}
 		else if (i == num_bytes - 1) {
-			if (bytes[i] != 0xf0) {
+			if (bytes[i] != 0xf7) {
 				return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
 			}
 		}
@@ -370,7 +370,7 @@ enum ble_midi_error_t ble_midi_writer_start_sysex_msg(struct ble_midi_writer_t *
 	if (writer->in_sysex_msg) {
 		return BLE_MIDI_ERROR_IN_SYSEX_SEQUENCE;
 	}
-	enum ble_midi_error_t result = append_status_byte_with_timestamp(writer, timestamp, 0xf7);
+	enum ble_midi_error_t result = append_status_byte_with_timestamp(writer, timestamp, 0xf0);
 	if (result == BLE_MIDI_SUCCESS) {
 		writer->in_sysex_msg = 1;
 		writer->prev_running_status_byte = 0;
@@ -383,7 +383,7 @@ enum ble_midi_error_t ble_midi_writer_end_sysex_msg(struct ble_midi_writer_t *wr
 	if (!writer->in_sysex_msg) {
 		return BLE_MIDI_ERROR_NOT_IN_SYSEX_SEQUENCE;
 	}
-	enum ble_midi_error_t result = append_status_byte_with_timestamp(writer, timestamp, 0xf0);
+	enum ble_midi_error_t result = append_status_byte_with_timestamp(writer, timestamp, 0xf7);
 	if (result == BLE_MIDI_SUCCESS) {
 		writer->in_sysex_msg = 0;
 	}
@@ -485,8 +485,6 @@ static enum ble_midi_error_t is_sysex_continuation(struct ble_midi_parser_t *par
 		}
 	}
 
-	*is_sysex = 0;
-
 	return BLE_MIDI_SUCCESS;
 }
 
@@ -496,7 +494,7 @@ enum ble_midi_error_t ble_midi_parse_packet(
     struct ble_midi_parse_cb_t *cb
 )
 {
-	/* Create a parser instance keeping track of the current state. */
+	/* A parser instance keeping track of the parsing state. */
 	struct ble_midi_parser_t parser = {
 		.in_sysex_msg = 0,
 		.prev_timestamp_byte = 0,
@@ -506,13 +504,15 @@ enum ble_midi_error_t ble_midi_parse_packet(
 		.running_status_byte = 0
 	};
 
-	/* First, check if this is a sysex continuation packet, then start the actual parsing. */
+	/* First, check if this is a sysex continuation packet. */
 	int is_sysex_cont = 0;
 	int res = is_sysex_continuation(&parser, &is_sysex_cont);
 	if (res != BLE_MIDI_SUCCESS) {
 		return res;
 	}
 	parser.in_sysex_msg = is_sysex_cont;
+
+	/* Reset read position and do the actual parsing */
 	parser.read_pos = 0;
 
 	/* Start actual parsing by reading packet header */
@@ -550,7 +550,7 @@ enum ble_midi_error_t ble_midi_parse_packet(
 					if (cb->midi_message_cb) {
 						cb->midi_message_cb(&status, 1, timestamp_ms(timestamp_high_bits, byte));
 					}
-				} else if (status == 0xf0) {
+				} else if (status == 0xf7) {
 					/* End of sysex */
 					parser.in_sysex_msg = 0;
 					if (cb->sysex_end_cb) {
@@ -611,13 +611,14 @@ enum ble_midi_error_t ble_midi_parse_packet(
 				} else {
 					/* Case 3 */
 					/* byte_1 is the status byte of this message. update running status */
+
 					if (is_channel_message(byte_1)) {
 						parser.running_status_byte = byte_1;
 					} else if (!is_realtime_message(byte_1) && !is_system_common_message(byte_1)) {
 						parser.running_status_byte = 0;
 					}
 
-					if (byte_1 == 0xf7) {
+					if (byte_1 == 0xf0) {
 						/* Sysex start */
 						parser.in_sysex_msg = 1;
 						if (cb->sysex_start_cb) {
