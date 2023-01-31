@@ -8,6 +8,6 @@ config BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON
   bool ""
   default y
 
-config BLE_MIDI_SIMPLE_TX
+config BLE_MIDI_NRF_BATCH_TX
   bool ""
   default n

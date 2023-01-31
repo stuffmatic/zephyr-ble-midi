@@ -3,6 +3,11 @@ work_q
   - send_current_packet (sent from radio interrupt if data to send flag is set)
   - set MTU
 
+* test invalid status bytes in sysex data
+* cb for raw rx/tx packet data. good for debugging different hosts.
+* sysex continuation where end byte is the first byte in the last packet. handle this in parser? or treat this as sysex continuation packet?
+* make unit tests main return non zero on failure
+
 # ble stuff
 
 * 2M PHY
@@ -10,8 +15,7 @@ work_q
 * MTU  ✅
 * connection interval ✅
 * enabled when subscription has started ✅
-* notify with callback
-* BLE_MIDI_RX_ONLY config flag to avoid radio interrupt getting called needlessly
+* notify with callback ✅
 * BLE_MIDI_OPTIMIZED_TX config flag that sends one msg per packet. useful for non-nrf platforms.
 
 # ref

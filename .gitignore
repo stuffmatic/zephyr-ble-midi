@@ -1,7 +1,6 @@
-*.out
 .DS_Store
 build*
-a.out
+*.out
 *.dSYM
 ble_midi_packet_test
 !ble_midi_packet_test.c
