@@ -9,7 +9,7 @@
 K_MSGQ_DEFINE(button_event_q, sizeof(uint8_t), 128, 4);
 
 #define SYSEX_TX_MESSAGE_SIZE 2000
-#define SYSEX_TX_CHUNK_SIZE 16
+#define SYSEX_TX_CHUNK_SIZE 64
 
 struct sample_app_state_t {
 	int ble_midi_is_available;
@@ -54,12 +54,14 @@ static void init_leds() {
 
 /************************ Buttons ************************/
 
-#define BUTTON_COUNT 2
+#define BUTTON_COUNT 3
 #define BUTTON_TX_NON_SYSEX 0
-#define BUTTON_TX_SYSEX 1
+#define BUTTON_TX_SYSEX_SHORT 1
+#define BUTTON_TX_SYSEX_LONG 2
 static const struct gpio_dt_spec buttons[BUTTON_COUNT] = {
     GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw0), gpios, {0}),
-		GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw1), gpios, {0})
+		GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw1), gpios, {0}),
+		GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw3), gpios, {0})
 };
 static struct gpio_callback button_cb_data;
 
@@ -89,7 +91,7 @@ static void init_buttons()
 	gpio_init_callback(
         &button_cb_data,
         button_pressed,
-        BIT(buttons[0].pin) | BIT(buttons[1].pin));
+        BIT(buttons[0].pin) | BIT(buttons[1].pin) | BIT(buttons[2].pin));
     int ret = gpio_add_callback(buttons[0].port, &button_cb_data);
     __ASSERT_NO_MSG(ret == 0);
 }
@@ -201,7 +203,15 @@ void main(void)
 				ble_midi_tx_msg(&(chord_msgs[1][0]));
 				ble_midi_tx_msg(&(chord_msgs[2][0]));
 			}
-			else if (button_down) {
+			else if (button_idx == BUTTON_TX_SYSEX_SHORT && button_down) {
+					uint8_t data_bytes[10] = {
+						0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
+					};
+					ble_midi_tx_sysex_start();
+					ble_midi_tx_sysex_data(data_bytes, 10);
+					ble_midi_tx_sysex_end();
+			}
+			else if (button_idx == BUTTON_TX_SYSEX_LONG && button_down) {
 				/* Send the first byte of a sysex message that is too large
 					to be sent at once. Use the tx done callback to send the
 					next chunk repeatedly until done. */
