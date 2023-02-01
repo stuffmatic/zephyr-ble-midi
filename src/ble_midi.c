@@ -1,4 +1,5 @@
 #include <zephyr/zephyr.h>
+#include <logging/log.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
@@ -7,6 +8,8 @@
 
 #include "ble_midi.h"
 #include "ble_midi_packet.h"
+
+LOG_MODULE_REGISTER(ble_midi);
 
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
 #include <zephyr/init.h>
@@ -63,20 +66,23 @@ static ssize_t midi_write_cb(struct bt_conn *conn,
 			.sysex_end_cb = user_callbacks.sysex_end_cb
 		};
     // log_buffer("MIDI rx:", &((uint8_t *)buf)[offset], len);
-    ble_midi_parse_packet(
+    enum ble_midi_error_t rc = ble_midi_parse_packet(
         &((uint8_t *)buf)[offset],
         len,
         &parse_cb
     );
+		if (rc != BLE_MIDI_SUCCESS) {
+			LOG_ERR("ble_midi_parse_packet returned error %d", rc);
+		}
 }
 
 static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr,
 				  uint16_t value)
 {
-    /* MIDI I/O characteristic notification has been turned on.
-       Notify the user that BLE MIDI is available. */
-		printk("midi_ccc_cfg_changed %d\n", value);
+	/* MIDI I/O characteristic notification has been turned on.
+			Notify the user that BLE MIDI is available. */
 	if (user_callbacks.available_cb) {
+		LOG_INF("BLE MIDI characteristic notification enabled");
 		user_callbacks.available_cb(value == BT_GATT_CCC_NOTIFY);
 	}
 }
@@ -127,52 +133,65 @@ static struct bt_le_conn_param *conn_param =
 
 void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 {
+	/* From the BLE MIDI spec:
+	 * "In transmitting MIDI data over Bluetooth, a series of MIDI messages of
+	 * various sizes must be encoded into packets no larger than the negotiated
+	 * MTU minus 3 bytes (typically 20 bytes or larger.)"
+	 */
+	int tx_buf_size_new = tx - 3;
+	if (tx_writer.tx_buf_size > tx_buf_size_new) {
+		LOG_WRN("Lowering tx_buf_size from %d to %d", tx_writer.tx_buf_size, tx_buf_size_new )
+	}
+
 	struct bt_conn_info info = {0};
 	int e = bt_conn_get_info(conn, &info);
-	if (tx_writer.tx_buf_size > tx) {
-		// TODO: warn(lowering packet max size)
-	}
-	// TODO: From the spec: In transmitting MIDI data over Bluetooth, a series of MIDI messages of various sizes must be encoded into packets no larger than the negotiated MTU minus 3 bytes (typically 20 bytes or larger.)
-	int tx_buf_max_size = tx > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : tx;
+
+	int tx_buf_max_size = tx_buf_size > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : tx_buf_size;
 	tx_writer.tx_buf_max_size = tx_buf_max_size;
 	sysex_tx_writer.tx_buf_max_size = tx_buf_max_size;
-	printk("Updated MTU: TX: %d RX: %d bytes.\n", tx, rx);
+	LOG_INF("MTU changed to tx %d, rx %d, setting tx_buf_max_size to %d", tx, rx, tx_buf_max_size);
 }
 
 static struct bt_gatt_cb gatt_callbacks = {.att_mtu_updated = mtu_updated};
 
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
+		int tx_running_status = CONFIG_BLE_MIDI_SEND_RUNNING_STATUS;
+		int tx_note_off_as_note_on = CONFIG_BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON;
+		ble_midi_writer_init(&sysex_tx_writer, tx_running_status, tx_note_off_as_note_on);
+		ble_midi_writer_init(&tx_writer, tx_running_status, tx_note_off_as_note_on);
+
+		LOG_INF("Device connected, tx_running_status %d, tx_note_off_as_note_on %d", tx_running_status, tx_note_off_as_note_on);
+
 		/* Request smallest possible connection interval, if not already set.
 		   NOTE: The actual update request is sent after 5 seconds as required
 			 by the Bluetooth Core specification spec. See BT_CONN_PARAM_UPDATE_TIMEOUT. */
 		struct bt_conn_info info = {0};
 		int e = bt_conn_get_info(conn, &info);
-		if (info.le.interval != INTERVAL_MIN) {
+		if (info.le.interval > INTERVAL_MIN) {
 			e = bt_conn_le_param_update(conn, conn_param);
-			printk("bt_conn_le_param_update rc %d\n", e);
+			LOG_INF("Got conn. interval %d, requested interval %d with error %d",
+							info.le.interval, INTERVAL_MIN, e);
 		}
-
-		int use_running_status = CONFIG_BLE_MIDI_SEND_RUNNING_STATUS;
-		int note_off_as_note_on = CONFIG_BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON;
-		ble_midi_writer_init(&sysex_tx_writer, use_running_status, note_off_as_note_on);
-		ble_midi_writer_init(&tx_writer, use_running_status, note_off_as_note_on);
 
 		irq_enable(TEMP_IRQn);
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
+		LOG_INF("Device disconnected");
     /* Device disconnected. Notify the user that BLE MIDI is not available. */
     if (user_callbacks.available_cb) {
       user_callbacks.available_cb(0);
     }
 		irq_disable(TEMP_IRQn);
+
 }
 
+/*
 static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 {
-	printk("Connection parameters update request received.\n");
+	LOG_INF("Connection parameters update request received.\n");
 	printk("Minimum interval: %d, Maximum interval: %d\n",
 	       param->interval_min, param->interval_max);
 	printk("Latency: %d, Timeout: %d\n", param->latency, param->timeout);
@@ -182,12 +201,12 @@ static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 		}
 
 	return true;
-}
+}*/
 
 static void le_param_updated(struct bt_conn *conn, uint16_t interval,
 			     uint16_t latency, uint16_t timeout)
 {
-	printk("Connection parameters updated: interval: %dx1.25ms, latency: %d, timeout: %d\n",
+	LOG_INF("Conn. params changed: interval: %d, latency: %d, timeout: %d",
 	       interval, latency, timeout);
 }
 
@@ -227,7 +246,6 @@ static void midi_msg_work_cb(struct k_work * w)
 	uint8_t msg[3];
 	ring_buf_get(&msg_ringbuf, msg, 3);
 	uint16_t timestamp = timestamp_ms();
-	// printk("adding msg at %d\n", timestamp);
 	ble_midi_writer_add_msg(&tx_writer, msg, timestamp);
 	atomic_set_bit(&has_tx_data, 0);
 }
@@ -258,7 +276,7 @@ SYS_INIT(radio_notif_setup, POST_KERNEL, 45);
 BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {
     .connected = on_connected,
     .disconnected = on_disconnected,
-		.le_param_req = le_param_req,
+		// .le_param_req = le_param_req,
 		.le_param_updated = le_param_updated,
 		// .le_phy_updated = le_phy_updated
 		// .le_data_len_updated = le_data_length_updated
@@ -272,6 +290,7 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks) {
     user_callbacks.sysex_start_cb = callbacks->sysex_start_cb;
 		user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 		user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
+		LOG_INF("Initialized BLE MIDI");
 }
 
 static void on_notify_done(struct bt_conn *conn, void *user_data)
@@ -315,11 +334,9 @@ int ble_midi_tx_sysex_start()
 
 int ble_midi_tx_sysex_data(uint8_t* bytes, int num_bytes)
 {
-	ble_midi_writer_reset(&sysex_tx_writer);
-	sysex_tx_writer.in_sysex_msg = 1; // TODO: remove in_sysex_msg flag?
 	int add_rc = ble_midi_writer_add_sysex_data(&sysex_tx_writer, bytes, num_bytes, timestamp_ms());
 	if (add_rc < 0) { // TODO: how to interpret 0?
-		printk("ble_midi_writer_add_sysex_data add_rc %d\n", add_rc);
+		LOG_ERR("ble_midi_writer_add_sysex_data failed with error %d", add_rc);
 		return -EINVAL;
 	}
 	int send_rc = send_packet(sysex_tx_writer.tx_buf, sysex_tx_writer.tx_buf_size);
@@ -331,7 +348,6 @@ int ble_midi_tx_sysex_data(uint8_t* bytes, int num_bytes)
 
 int ble_midi_tx_sysex_end()
 {
-	ble_midi_writer_reset(&sysex_tx_writer);
 	ble_midi_writer_end_sysex_msg(&sysex_tx_writer, timestamp_ms());
 	return send_packet(sysex_tx_writer.tx_buf, sysex_tx_writer.tx_buf_size);
 }

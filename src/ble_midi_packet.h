@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#define BLE_MIDI_TX_PACKET_MAX_SIZE 64 // TODO: MTU - 3 according to spec. TODO: allow defining elswhere
-
 enum ble_midi_error_t {
 	BLE_MIDI_SUCCESS = 0,
 	BLE_MIDI_ERROR_PACKET_FULL = -1,
@@ -47,6 +45,8 @@ enum ble_midi_error_t ble_midi_parse_packet(
     uint32_t rx_buf_size,
     struct ble_midi_parse_cb_t *cb
 );
+
+#define BLE_MIDI_TX_PACKET_MAX_SIZE 64
 
 /**
  * Keeps track of the state when writing BLE MIDI packets.
