@@ -30,12 +30,9 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks);
 
 /** Sends a non-sysex MIDI message. 3 zero padded bytes. */
 int ble_midi_tx_msg(uint8_t* bytes);
-int ble_midi_tx_sysex_msg(uint8_t* bytes, int num_bytes);
 
-#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
 int ble_midi_tx_sysex_start();
 int ble_midi_tx_sysex_data(uint8_t* bytes, int num_bytes);
 int ble_midi_tx_sysex_end();
-#endif
 
 #endif

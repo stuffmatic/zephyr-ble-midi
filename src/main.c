@@ -9,6 +9,7 @@
 K_MSGQ_DEFINE(button_event_q, sizeof(uint8_t), 128, 4);
 
 #define SYSEX_TX_MESSAGE_SIZE 2000
+#define SYSEX_TX_CHUNK_SIZE 16
 
 struct sample_app_state_t {
 	int ble_midi_is_available;
@@ -105,7 +106,21 @@ static void ble_midi_available_cb(int is_available) {
 }
 
 static void tx_available_cb() {
-
+	if (sample_app_state.sysex_tx_in_progress) {
+		if (sample_app_state.sysex_tx_data_byte_count == SYSEX_TX_MESSAGE_SIZE) {
+			ble_midi_tx_sysex_end();
+			sample_app_state.sysex_tx_in_progress = 0;
+		} else {
+			uint8_t chunk[SYSEX_TX_CHUNK_SIZE];
+			for (int i = 0; i < SYSEX_TX_CHUNK_SIZE; i++) {
+				chunk[i] = (sample_app_state.sysex_tx_data_byte_count + i) % 128;
+			}
+			int num_bytes_left = SYSEX_TX_MESSAGE_SIZE - sample_app_state.sysex_tx_data_byte_count;
+			int num_bytes_to_send = num_bytes_left < SYSEX_TX_CHUNK_SIZE ? num_bytes_left : SYSEX_TX_CHUNK_SIZE;
+			int num_bytes_sent = ble_midi_tx_sysex_data(chunk, num_bytes_to_send);
+			sample_app_state.sysex_tx_data_byte_count += num_bytes_sent;
+		}
+	}
 }
 
 /** Called when a non-sysex message has been parsed */
@@ -187,14 +202,12 @@ void main(void)
 				ble_midi_tx_msg(&(chord_msgs[2][0]));
 			}
 			else if (button_down) {
-				/* Send the first chunk of a sysex message that is too large
+				/* Send the first byte of a sysex message that is too large
 					to be sent at once. Use the tx done callback to send the
 					next chunk repeatedly until done. */
-				uint8_t cable_num = 0;
-				uint8_t msg[3] = { 0xf0, 0x01, 0x0f7};
 				sample_app_state.sysex_tx_in_progress = 1;
-				sample_app_state.sysex_tx_data_byte_count = 3;
-				ble_midi_tx_msg(msg);
+				sample_app_state.sysex_tx_data_byte_count = 0;
+				ble_midi_tx_sysex_start();
 			}
 		}
 	}

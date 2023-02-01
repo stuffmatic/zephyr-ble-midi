@@ -16,22 +16,12 @@
 atomic_t has_tx_data = ATOMIC_INIT(0x00);
 struct k_work_q work_q;
 RING_BUF_DECLARE(msg_ringbuf, 128);
+RING_BUF_DECLARE(sysex_ringbuf, 128);
 
-#endif
-
-#ifdef CONFIG_BLE_MIDI_SEND_RUNNING_STATUS
-#define BLE_MIDI_RUNNING_STATUS_ENABLED 1
-#else
-#define BLE_MIDI_RUNNING_STATUS_ENABLED 0
-#endif
-
-#ifdef CONFIG_BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON
-#define BLE_MIDI_NOTE_OFF_AS_NOTE_ON 1
-#else
-#define BLE_MIDI_NOTE_OFF_AS_NOTE_ON 0
 #endif
 
 static struct ble_midi_writer_t tx_writer;
+static struct ble_midi_writer_t sysex_tx_writer;
 
 static struct ble_midi_callbacks user_callbacks = {
     .available_cb = NULL,
@@ -59,14 +49,6 @@ static void log_buffer(const char* tag, uint8_t* bytes, uint32_t num_bytes)
 		printk("%02x ", ((uint8_t *)bytes)[i]);
 	}
 	printk("\n");
-}
-
-static void dummy_midi_message_cb(uint8_t* bytes, uint8_t num_bytes, uint16_t timestamp) {
-
-}
-
-static void dummy_sysex_cb(uint8_t* bytes, uint8_t num_bytes, uint32_t sysex_ended) {
-
 }
 
 static ssize_t midi_write_cb(struct bt_conn *conn,
@@ -151,7 +133,9 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 		// TODO: warn(lowering packet max size)
 	}
 	// TODO: From the spec: In transmitting MIDI data over Bluetooth, a series of MIDI messages of various sizes must be encoded into packets no larger than the negotiated MTU minus 3 bytes (typically 20 bytes or larger.)
-	tx_writer.tx_buf_max_size = tx > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : tx;
+	int tx_buf_max_size = tx > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : tx;
+	tx_writer.tx_buf_max_size = tx_buf_max_size;
+	sysex_tx_writer.tx_buf_max_size = tx_buf_max_size;
 	printk("Updated MTU: TX: %d RX: %d bytes.\n", tx, rx);
 }
 
@@ -169,7 +153,10 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 			printk("bt_conn_le_param_update rc %d\n", e);
 		}
 
-		ble_midi_writer_init(&tx_writer, BLE_MIDI_RUNNING_STATUS_ENABLED, BLE_MIDI_NOTE_OFF_AS_NOTE_ON);
+		int use_running_status = CONFIG_BLE_MIDI_SEND_RUNNING_STATUS;
+		int note_off_as_note_on = CONFIG_BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON;
+		ble_midi_writer_init(&sysex_tx_writer, use_running_status, note_off_as_note_on);
+		ble_midi_writer_init(&tx_writer, use_running_status, note_off_as_note_on);
 
 		irq_enable(TEMP_IRQn);
 }
@@ -224,6 +211,8 @@ uint16_t timestamp_ms() {
 	return k_ticks_to_ms_near64(k_uptime_ticks()) & 0x1FFF;
 }
 
+#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
+
 #define RADIO_NOTIF_PRIORITY 1
 static void radio_notif_work_cb(struct k_work * w)
 {
@@ -263,6 +252,8 @@ static void radio_notif_setup()
 }
 
 SYS_INIT(radio_notif_setup, POST_KERNEL, 45);
+
+#endif
 
 BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {
     .connected = on_connected,
@@ -308,7 +299,6 @@ int ble_midi_tx_msg(uint8_t *bytes)
 	#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
 	ring_buf_put(&msg_ringbuf, bytes, 3);
 	k_work_submit(&midi_msg_work);
-
 	#else
 	ble_midi_writer_reset(&tx_writer);
 	ble_midi_writer_add_msg(&tx_writer, bytes, timestamp_ms());
@@ -316,30 +306,33 @@ int ble_midi_tx_msg(uint8_t *bytes)
 	#endif
 }
 
-int ble_midi_tx_sysex_msg(uint8_t* bytes, int num_bytes)
-{
-	#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
-	return ble_midi_writer_add_sysex_msg(&tx_writer, bytes, num_bytes, timestamp_ms());
-	#else
-	ble_midi_writer_reset(&tx_writer);
-	ble_midi_writer_add_sysex_msg(&tx_writer, bytes, num_bytes, timestamp_ms());
-	return send_packet(tx_writer.tx_buf, tx_writer.tx_buf_size);
-	#endif
-}
-
-#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
 int ble_midi_tx_sysex_start()
 {
-	return ble_midi_writer_start_sysex_msg(&tx_writer, timestamp_ms());
+	ble_midi_writer_reset(&sysex_tx_writer);
+	ble_midi_writer_start_sysex_msg(&sysex_tx_writer, timestamp_ms());
+	return send_packet(sysex_tx_writer.tx_buf, sysex_tx_writer.tx_buf_size);
 }
 
 int ble_midi_tx_sysex_data(uint8_t* bytes, int num_bytes)
 {
-	return ble_midi_writer_add_sysex_data(&tx_writer, bytes, num_bytes, timestamp_ms());
+	ble_midi_writer_reset(&sysex_tx_writer);
+	sysex_tx_writer.in_sysex_msg = 1; // TODO: remove in_sysex_msg flag?
+	int add_rc = ble_midi_writer_add_sysex_data(&sysex_tx_writer, bytes, num_bytes, timestamp_ms());
+	if (add_rc < 0) { // TODO: how to interpret 0?
+		printk("ble_midi_writer_add_sysex_data add_rc %d\n", add_rc);
+		return -EINVAL;
+	}
+	int send_rc = send_packet(sysex_tx_writer.tx_buf, sysex_tx_writer.tx_buf_size);
+	if (send_rc == 0) {
+		return add_rc; /* Return number of sent bytes on success */
+	}
+	return send_rc;
 }
 
 int ble_midi_tx_sysex_end()
 {
-	return ble_midi_writer_end_sysex_msg(&tx_writer, timestamp_ms());
+	ble_midi_writer_reset(&sysex_tx_writer);
+	ble_midi_writer_end_sysex_msg(&sysex_tx_writer, timestamp_ms());
+	return send_packet(sysex_tx_writer.tx_buf, sysex_tx_writer.tx_buf_size);
 }
-#endif
+
