@@ -1,4 +1,7 @@
-source "Kconfig.zephyr"
+config BLE_MIDI
+	bool "Enable BLE MIDI"
+	depends on BT
+  depends on BT_PERIPHERAL
 
 config BLE_MIDI_SEND_RUNNING_STATUS
   bool ""

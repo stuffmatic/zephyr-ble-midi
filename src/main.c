@@ -1,9 +1,9 @@
-#include <zephyr/zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/bluetooth.h>
-#include "ble_midi.h"
+#include <ble_midi/ble_midi.h>
 
 /************************ App state ************************/
 K_MSGQ_DEFINE(button_event_q, sizeof(uint8_t), 128, 4);

@@ -1,20 +1,20 @@
 #include <zephyr/zephyr.h>
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/uuid.h>
 
-#include "ble_midi.h"
-#include "ble_midi_packet.h"
+#include <ble_midi/ble_midi.h>
+#include <ble_midi/ble_midi_packet.h>
 
 LOG_MODULE_REGISTER(ble_midi);
 
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
-#include <sys/ring_buffer.h>
+#include <zephyr/sys/ring_buffer.h>
 #include <mpsl_radio_notification.h>
 atomic_t has_tx_data = ATOMIC_INIT(0x00);
 struct k_work_q work_q;
@@ -140,13 +140,13 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	 */
 	int tx_buf_size_new = tx - 3;
 	if (tx_writer.tx_buf_size > tx_buf_size_new) {
-		LOG_WRN("Lowering tx_buf_size from %d to %d", tx_writer.tx_buf_size, tx_buf_size_new )
+		LOG_WRN("Lowering tx_buf_size from %d to %d", tx_writer.tx_buf_size, tx_buf_size_new );
 	}
 
 	struct bt_conn_info info = {0};
 	int e = bt_conn_get_info(conn, &info);
 
-	int tx_buf_max_size = tx_buf_size > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : tx_buf_size;
+	int tx_buf_max_size = tx_buf_size_new > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : tx_buf_size_new;
 	tx_writer.tx_buf_max_size = tx_buf_max_size;
 	sysex_tx_writer.tx_buf_max_size = tx_buf_max_size;
 	LOG_INF("MTU changed to tx %d, rx %d, setting tx_buf_max_size to %d", tx, rx, tx_buf_max_size);

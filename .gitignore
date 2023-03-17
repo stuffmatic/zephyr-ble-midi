@@ -1,5 +1,8 @@
 .DS_Store
 build*
+.vscode/*
+!.vscode/launch.json
+
 *.out
 *.dSYM
 ble_midi_packet_test

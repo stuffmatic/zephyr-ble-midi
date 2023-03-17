@@ -1,5 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# For the sake of demonstration, we add the driver directory as a zephyr module
+# by hand. If your driver is a project that's managed by west, you can remove this line.
+list(APPEND ZEPHYR_EXTRA_MODULES
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+
 cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(ble_midi)
+project(ble_midi_sample)
 
-target_sources(app PRIVATE src/main.c src/ble_midi.c src/ble_midi_packet.c)
+target_sources(app PRIVATE src/main.c)
