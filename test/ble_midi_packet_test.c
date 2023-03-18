@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <assert.h>
-#include "../src/ble_midi_packet.h"
+#include "../ble-midi/include/ble_midi/ble_midi_packet.h"
 
 #define SYSEX_START 0xf0
 #define SYSEX_END 0xf7
