@@ -1,4 +1,4 @@
-#include <ble_midi/ble_midi_packet.h>
+#include "ble_midi_packet.h"
 
 static uint8_t timestamp_high(uint16_t timestamp_ms) {
 	/* High 6 bits of 13 bit timestamp */

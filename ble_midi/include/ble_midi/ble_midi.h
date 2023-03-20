@@ -3,7 +3,6 @@
 
 #include <zephyr/zephyr.h>
 #include <zephyr/bluetooth/uuid.h>
-#include "ble_midi_packet.h"
 
 #define BLE_MIDI_SERVICE_UUID \
 	BT_UUID_128_ENCODE(0x03B80E5A, 0xEDE8, 0x4B33, 0xA751, 0x6CE34EC4C700)
@@ -12,6 +11,14 @@
 
 typedef void (*ble_midi_tx_available_cb_t)();
 typedef void (*ble_midi_available_cb_t)(uint32_t is_available);
+/** Called when a non-sysex message has been parsed */
+typedef void (*ble_midi_message_cb_t)(uint8_t *bytes, uint8_t num_bytes, uint16_t timestamp);
+/** Called when a sysex message starts */
+typedef void (*ble_midi_sysex_start_cb_t)(uint16_t timestamp);
+/** Called when a sysex data byte has been received */
+typedef void (*ble_midi_sysex_data_cb_t)(uint8_t data_byte);
+/** Called when a sysex message ends */
+typedef void (*ble_midi_sysex_end_cb_t)(uint16_t timestamp);
 
 /** Callbacks set to NULL are ignored. */
 struct ble_midi_callbacks {

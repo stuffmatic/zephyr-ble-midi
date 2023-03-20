@@ -7,9 +7,10 @@
 #include <zephyr/bluetooth/uuid.h>
 
 #include <ble_midi/ble_midi.h>
-#include <ble_midi/ble_midi_packet.h>
+#include "ble_midi_packet.h"
 
 LOG_MODULE_REGISTER(ble_midi);
+
 
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
 #include <zephyr/init.h>
