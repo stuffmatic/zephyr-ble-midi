@@ -1,7 +1,6 @@
 #ifndef _BLE_MIDI_H_
 #define _BLE_MIDI_H_
 
-#include <zephyr/zephyr.h>
 #include <zephyr/bluetooth/uuid.h>
 
 #define BLE_MIDI_SERVICE_UUID \
@@ -21,8 +20,9 @@ typedef void (*ble_midi_sysex_data_cb_t)(uint8_t data_byte);
 typedef void (*ble_midi_sysex_end_cb_t)(uint16_t timestamp);
 
 /** Callbacks set to NULL are ignored. */
-struct ble_midi_callbacks {
-  ble_midi_available_cb_t available_cb;
+struct ble_midi_callbacks
+{
+	ble_midi_available_cb_t available_cb;
 	ble_midi_tx_available_cb_t tx_available_cb;
 	ble_midi_message_cb_t midi_message_cb;
 	ble_midi_sysex_start_cb_t sysex_start_cb;
@@ -35,11 +35,14 @@ struct ble_midi_callbacks {
  */
 void ble_midi_init(struct ble_midi_callbacks *callbacks);
 
-/** Sends a non-sysex MIDI message. 3 zero padded bytes. */
-int ble_midi_tx_msg(uint8_t* bytes);
+/** 
+ * Sends a non-sysex MIDI message.
+ * @param bytes A buffer of length 3 containing the message bytes to send. 
+ */
+int ble_midi_tx_msg(uint8_t *bytes);
 
 int ble_midi_tx_sysex_start();
-int ble_midi_tx_sysex_data(uint8_t* bytes, int num_bytes);
+int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes);
 int ble_midi_tx_sysex_end();
 
 #endif

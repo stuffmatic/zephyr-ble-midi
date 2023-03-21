@@ -46,7 +46,12 @@ enum ble_midi_error_t ble_midi_parse_packet(
     struct ble_midi_parse_cb_t *cb
 );
 
+#ifdef CONFIG_BLE_MIDI_TX_PACKET_MAX_SIZE
+#define BLE_MIDI_TX_PACKET_MAX_SIZE CONFIG_BLE_MIDI_TX_PACKET_MAX_SIZE
+#else
 #define BLE_MIDI_TX_PACKET_MAX_SIZE 64
+#endif
+
 
 /**
  * Keeps track of the state when writing BLE MIDI packets.

@@ -3,6 +3,9 @@
 * sysex continuation where end byte is the first byte in the last packet. handle this in parser? or treat this as sysex continuation packet?
 * make unit tests main return non zero on failure
 * disconnect API?
+* select/dpend on BT_* config vars
+* don't use softdevice?
+* fix stack overflow when receiving events
 
 # ble stuff
 

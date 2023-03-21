@@ -3,6 +3,8 @@ config BLE_MIDI
 	depends on BT
   depends on BT_PERIPHERAL
 
+if BLE_MIDI
+
 config BLE_MIDI_SEND_RUNNING_STATUS
   bool ""
 	default y
@@ -14,3 +16,13 @@ config BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON
 config BLE_MIDI_NRF_BATCH_TX
   bool ""
   default n
+
+config BLE_MIDI_TX_PACKET_MAX_SIZE
+  int ""
+  default 32
+
+module = BLE_MIDI
+module-str = BLE MIDI
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # BLE_MIDI
