@@ -20,6 +20,16 @@ static uint16_t timestamp_ms()
 	return k_ticks_to_ms_near64(k_uptime_ticks()) & 0x1FFF;
 }
 
+static void log_buffer(const char *tag, uint8_t *bytes, uint32_t num_bytes)
+{
+	printk("%s ", tag);
+	for (int i = 0; i < num_bytes; i++)
+	{
+		printk("%02x ", ((uint8_t *)bytes)[i]);
+	}
+	printk("\n");
+}
+
 static int ble_midi_is_initialized = 0;
 static struct ble_midi_writer_t tx_writer;
 static struct ble_midi_writer_t sysex_tx_writer;

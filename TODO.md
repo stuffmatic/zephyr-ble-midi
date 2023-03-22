@@ -5,7 +5,8 @@
 * disconnect API?
 * select/dpend on BT_* config vars
 * don't use softdevice?
-* fix stack overflow when receiving events
+* fix stack overflow when receiving (sysex) events. probably related to printk. use work queue/ringbuffer to receive safely
+* mention that batch tx requires softdevice
 
 # ble stuff
 
@@ -15,5 +16,4 @@
 # ref
 
 * https://devzone.nordicsemi.com/guides/short-range-guides/b/bluetooth-low-energy/posts/midi-over-bluetooth-le
-* https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/optimizing-ble-midi-with-regards-to-timing-1293631358
 * https://github.com/BLE-MIDI/NCS-MIDI/blob/main/samples/bluetooth/peripheral_midi/src/main.c

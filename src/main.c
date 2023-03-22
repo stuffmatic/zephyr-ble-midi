@@ -140,7 +140,7 @@ static void ble_midi_sysex_start_cb(uint16_t timestamp)
 /** Called when a sysex data byte has been received */
 static void ble_midi_sysex_data_cb(uint8_t data_byte)
 {
-	printk("rx sysex byte %02x\n", data_byte);
+	// printk("rx sysex byte %02x\n", data_byte);
 
 }
 /** Called when a sysex message ends */
