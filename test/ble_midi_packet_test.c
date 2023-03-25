@@ -5,6 +5,8 @@
 #define SYSEX_START 0xf0
 #define SYSEX_END   0xf7
 
+static int num_failed_assertions = 0;
+
 typedef struct {
 	uint8_t bytes[3];
 	uint16_t timestamp;
@@ -44,12 +46,18 @@ void assert_midi_msg_equals(midi_msg_t *actual, midi_msg_t *expected)
 		equivalent = 0;
 	}
 
+	int success = equal || equivalent;
+
 	printf("        %s actual %02x %02x %02x (t %d), expected %02x %02x %02x (t %d)%s\n",
-	       equal || equivalent ? "✅" : "❌", actual->bytes[0], actual->bytes[1],
+	       success ? "✅" : "❌", actual->bytes[0], actual->bytes[1],
 	       actual->bytes[2], actual->bytes[0] < 0x80 ? 0 : actual->timestamp,
 	       expected->bytes[0], expected->bytes[1], expected->bytes[2],
 	       expected->bytes[0] < 0x80 ? 0 : expected->timestamp,
 	       equivalent ? " (equivalent)" : "");
+	
+	if (!success) {
+		num_failed_assertions++;
+	}
 }
 
 void assert_payload_equals(struct ble_midi_writer_t *writer, uint8_t *expected_payload,
@@ -64,6 +72,10 @@ void assert_payload_equals(struct ble_midi_writer_t *writer, uint8_t *expected_p
 				break;
 			}
 		}
+	} 
+	
+	if (error) {
+		num_failed_assertions++;
 	}
 
 	printf("    %s\n", error ? "tx payload mismatch ❌" : "tx payload check OK ✅");
@@ -78,6 +90,7 @@ void assert_error_code(int actual, int expected)
 {
 	if (actual != expected) {
 		printf("❌ expected error code %d, got %d\n", expected, actual);
+		num_failed_assertions++;
 	}
 }
 
@@ -85,6 +98,7 @@ void assert_success(int error_code)
 {
 	if (error_code != BLE_MIDI_SUCCESS) {
 		printf("❌ expected success error code, got %d\n", error_code);
+		num_failed_assertions++;
 	}
 }
 
@@ -92,6 +106,7 @@ void assert_equals(int actual, int expected)
 {
 	if (actual != expected) {
 		printf("❌ expected %d, got %d\n", expected, actual);
+		num_failed_assertions++;
 	}
 }
 
@@ -537,4 +552,13 @@ int main(int argc, char *argv[])
 	test_sysex_continuation();
 	test_parse_malformed_sysex_message();
 	test_null_parse_callbacks();
+
+	printf("");
+	if (num_failed_assertions == 0) {
+		printf("✅ No failed assertions\n");
+		return 0;
+	} else {
+		printf("❌ %d failed assertions\n", num_failed_assertions);
+		return 1;
+	}
 }
