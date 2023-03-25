@@ -5,8 +5,10 @@
 * disconnect API?
 * select/dpend on BT_* config vars
 * don't use softdevice?
-* fix stack overflow when receiving (sysex) events. probably related to printk. use work queue/ringbuffer to receive safely
+* fix stack overflow when receiving (sysex) events. probably related to printk. use work queue/ringbuffer to process data safely in the sample app
 * mention that batch tx requires softdevice
+* use dedicated work queue internally?
+* remove inSysexMessage from writer
 
 # ble stuff
 

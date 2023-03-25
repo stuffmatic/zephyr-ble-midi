@@ -6,7 +6,7 @@
 enum ble_midi_error_t {
 	BLE_MIDI_SUCCESS = 0,
 	BLE_MIDI_ERROR_PACKET_FULL = -1,
-	BLE_MIDI_ERROR_IN_SYSEX_SEQUENCE = -2,
+	BLE_MIDI_ERROR_ALREADY_IN_SYSEX_SEQUENCE = -2,
 	BLE_MIDI_ERROR_NOT_IN_SYSEX_SEQUENCE = -3,
 	BLE_MIDI_ERROR_INVALID_DATA_BYTE = -4,
 	BLE_MIDI_ERROR_INVALID_STATUS_BYTE = -5,
@@ -32,7 +32,7 @@ typedef void (*ble_midi_sysex_end_cb_t)(uint16_t timestamp);
  */
 struct ble_midi_parse_cb_t {
 	ble_midi_message_cb_t midi_message_cb;
-  ble_midi_sysex_data_cb_t sysex_data_cb;
+	ble_midi_sysex_data_cb_t sysex_data_cb;
 	ble_midi_sysex_start_cb_t sysex_start_cb;
 	ble_midi_sysex_end_cb_t sysex_end_cb;
 };
@@ -40,11 +40,8 @@ struct ble_midi_parse_cb_t {
 /**
  * Parses an entire BLE MIDI packet.
  */
-enum ble_midi_error_t ble_midi_parse_packet(
-    uint8_t *rx_buf,
-    uint32_t rx_buf_size,
-    struct ble_midi_parse_cb_t *cb
-);
+enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_size,
+					    struct ble_midi_parse_cb_t *cb);
 
 #ifdef CONFIG_BLE_MIDI_TX_PACKET_MAX_SIZE
 #define BLE_MIDI_TX_PACKET_MAX_SIZE CONFIG_BLE_MIDI_TX_PACKET_MAX_SIZE
@@ -52,12 +49,10 @@ enum ble_midi_error_t ble_midi_parse_packet(
 #define BLE_MIDI_TX_PACKET_MAX_SIZE 64
 #endif
 
-
 /**
  * Keeps track of the state when writing BLE MIDI packets.
  */
-struct ble_midi_writer_t
-{
+struct ble_midi_writer_t {
 	/* The packet to send. */
 	uint8_t tx_buf[BLE_MIDI_TX_PACKET_MAX_SIZE];
 	/* Current maximum packet size. Must not be greater than BLE_MIDI_TX_PACKET_MAX_SIZE */
@@ -75,34 +70,32 @@ struct ble_midi_writer_t
 	uint8_t in_sysex_msg;
 	/* Indicates if running status should be used. */
 	int running_status_enabled;
-	/* Indicates if note off messages should be represented as zero velocity note on messages. */
+	/* Indicates if note off messages should be represented as zero velocity note on messages.
+	 */
 	int note_off_as_note_on;
 };
 
 /* Called once before using the writer. */
-void ble_midi_writer_init(struct ble_midi_writer_t *writer,
-		  										int running_status_enabled,
-				  								int note_off_as_note_on);
+void ble_midi_writer_init(struct ble_midi_writer_t *writer, int running_status_enabled,
+			  int note_off_as_note_on);
 
 /* Called after finishing writing a packet. */
 void ble_midi_writer_reset(struct ble_midi_writer_t *writer);
 
 /* Append a non-sysex MIDI message. */
-enum ble_midi_error_t ble_midi_writer_add_msg(
-    struct ble_midi_writer_t *writer,
-    uint8_t *bytes,	/* 3 bytes, zero padded */
-    uint16_t timestamp /* 13 bit, wrapped ms timestamp */
+enum ble_midi_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *writer,
+					      uint8_t *bytes,	 /* 3 bytes, zero padded */
+					      uint16_t timestamp /* 13 bit, wrapped ms timestamp */
 );
 
 /* Append an entire sysex MIDI message. Fails if the message does not fit into the packet. */
-enum ble_midi_error_t ble_midi_writer_add_sysex_msg(
-    struct ble_midi_writer_t *writer,
-    uint8_t *bytes,
-    uint32_t num_bytes,
-    uint16_t timestamp);
+enum ble_midi_error_t ble_midi_writer_add_sysex_msg(struct ble_midi_writer_t *writer,
+						    uint8_t *bytes, uint32_t num_bytes,
+						    uint16_t timestamp);
 
 /* Start a sysex message, possibly spanning multiple messages. */
-enum ble_midi_error_t ble_midi_writer_start_sysex_msg(struct ble_midi_writer_t *writer, uint16_t timestamp);
+enum ble_midi_error_t ble_midi_writer_start_sysex_msg(struct ble_midi_writer_t *writer,
+						      uint16_t timestamp);
 
 /**
  * Append data bytes to an ongoing sysex message, possibly spanning multiple packets.
@@ -110,13 +103,11 @@ enum ble_midi_error_t ble_midi_writer_start_sysex_msg(struct ble_midi_writer_t *
  * Returns a non-negative value on success, indicating the number of bytes written to the packet.
  * Negative return values correspond to error codes from the ble_midi_error_t enum.
  */
-int ble_midi_writer_add_sysex_data(
-    struct ble_midi_writer_t *writer,
-    uint8_t *data_bytes,
-    uint32_t num_data_bytes,
-    uint16_t timestamp);
+int ble_midi_writer_add_sysex_data(struct ble_midi_writer_t *writer, uint8_t *data_bytes,
+				   uint32_t num_data_bytes, uint16_t timestamp);
 
 /* End a sysex message, possibly spanning multiple messages. */
-enum ble_midi_error_t ble_midi_writer_end_sysex_msg(struct ble_midi_writer_t *writer, uint16_t timestamp);
+enum ble_midi_error_t ble_midi_writer_end_sysex_msg(struct ble_midi_writer_t *writer,
+						    uint16_t timestamp);
 
 #endif
