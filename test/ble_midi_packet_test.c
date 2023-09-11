@@ -333,8 +333,7 @@ void test_full_packet()
 				 {.bytes = {0xb0, 0x12, 0x34}, .timestamp = 10},
 				 {.bytes = {0xe0, 0x12, 0x34}, .timestamp = 10},
 				 {.bytes = {0xb0, 0x12, 0x34}, .timestamp = 10},
-				 {.bytes = {0xe0, 0x12, 0x34},
-				  .timestamp = 10}}; /* <- should not fit in the packet */
+				 {.bytes = {0xe0, 0x12, 0x34}, .timestamp = 10}}; /* <- should not fit in the packet */
 
 	uint8_t expected_payload[] = {
 		0x80, // packet header
@@ -536,6 +535,22 @@ static void test_parse_malformed_sysex_message()
 	ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb);
 }
 
+static void test_parse_invalid_status_in_sysex_message() 
+{
+	printf("Parsing a sysex message with invalid interleaved status bytes should fail \n\n");
+	/* A payload with a sysex message with interleaved invalid status bytes  */
+	uint8_t payload[] = {
+		0x81,		      // packet header
+		0xd2, SYSEX_START,// sysex end
+		0x01, 0x02, 0x03, // sysex data
+		0x8b, 			  // timestamp
+		0xf4,			  // Invalid status byte
+		0xf0, SYSEX_END,  // sysex start
+	};
+	num_parsed_messages = 0;
+	assert_error_code(ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb), BLE_MIDI_ERROR_INVALID_STATUS_BYTE);
+}
+
 int main(int argc, char *argv[])
 {
 	test_timestamp_byte_wrapping();
@@ -551,6 +566,7 @@ int main(int argc, char *argv[])
 	test_disable_note_off_as_note_on();
 	test_sysex_continuation();
 	test_parse_malformed_sysex_message();
+	test_parse_invalid_status_in_sysex_message();
 	test_null_parse_callbacks();
 
 	printf("");

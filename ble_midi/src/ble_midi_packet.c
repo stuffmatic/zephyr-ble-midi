@@ -544,7 +544,8 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 							timestamp_ms(timestamp_high_bits, byte));
 					}
 				} else {
-					/* Invalid status byte. Ignore. */
+					/* Invalid status byte. Bail. */
+					return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
 				}
 			}
 		} else {
