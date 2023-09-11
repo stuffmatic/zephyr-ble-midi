@@ -177,7 +177,7 @@ enum ble_midi_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *writer,
 	}
 
 	/* The following code appends a MIDI message to the BLE MIDI packet in two steps:
-	   1. Compute a maximum of 5 bytes to append
+	   1. Compute a maximum of 5 bytes to append:
 		 - packet header?
 		 - message timestamp?
 		 - 1-3 midi bytes
@@ -298,7 +298,8 @@ enum ble_midi_error_t ble_midi_writer_add_sysex_msg(struct ble_midi_writer_t *wr
 	/* See if there's room in the packet */
 	int num_bytes_to_append =
 		num_bytes + 2; /* +2 timestamp bytes for sysex start/end status bytes */
-	if (writer->tx_buf_size == 0) {
+	int add_packet_header = writer->tx_buf_size == 0;
+	if (add_packet_header) {
 		num_bytes_to_append++; /* Empty packet. A packet header byte is needed. */
 	}
 	if (writer->tx_buf_max_size - writer->tx_buf_size < num_bytes_to_append) {
@@ -306,7 +307,7 @@ enum ble_midi_error_t ble_midi_writer_add_sysex_msg(struct ble_midi_writer_t *wr
 	}
 
 	/* Add packet header? */
-	if (writer->tx_buf_size == 0) {
+	if (add_packet_header) {
 		writer->tx_buf[writer->tx_buf_size++] = header_byte(timestamp);
 	}
 
@@ -329,7 +330,8 @@ static enum ble_midi_error_t append_status_byte_with_timestamp(struct ble_midi_w
 							       uint16_t timestamp, uint8_t status)
 {
 	int num_bytes_to_append = 2;
-	if (writer->tx_buf_size == 0) {
+	int add_packet_header = writer->tx_buf_size == 0;
+	if (add_packet_header) {
 		/* Empty packet. Also add packet header. */
 		num_bytes_to_append++;
 	}
@@ -338,7 +340,7 @@ static enum ble_midi_error_t append_status_byte_with_timestamp(struct ble_midi_w
 	}
 
 	/* If we made it here, there's room in the packet for the sysex start message. */
-	if (writer->tx_buf_size == 0) {
+	if (add_packet_header) {
 		writer->tx_buf[writer->tx_buf_size++] = header_byte(timestamp);
 	}
 
@@ -438,8 +440,8 @@ static enum ble_midi_error_t is_sysex_continuation(struct ble_midi_parser_t *par
 
 	/* A sysex continuation packet starts with
 	  - a packet header
-		- 0 or more system realtime messages with timestamps
-		- a data byte */
+	  - 0 or more system realtime messages with timestamps
+	  - a data byte */
 	uint8_t header = 0;
 	if (ble_midi_parser_read(parser, &header, 1)) {
 		return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
@@ -602,10 +604,10 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 							timestamp_ms(timestamp_high_bits, byte_0));
 					}
 				} else {
-					/* Case 3 */
+					/* Case 3 - full midi message with timestamp */
+
 					/* byte_1 is the status byte of this message. update running
 					 * status */
-
 					if (is_channel_message(byte_1)) {
 						parser.running_status_byte = byte_1;
 					} else if (!is_realtime_message(byte_1) &&
@@ -621,6 +623,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 								timestamp_high_bits, byte_0));
 						}
 					} else {
+						/* Non-sysex message */
 						uint8_t msg_size = message_size(byte_1);
 						if (msg_size > 0) {
 							uint8_t num_data_bytes = msg_size - 1;

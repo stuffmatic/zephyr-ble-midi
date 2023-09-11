@@ -57,7 +57,7 @@ struct ble_midi_writer_t {
 	uint8_t tx_buf[BLE_MIDI_TX_PACKET_MAX_SIZE];
 	/* Current maximum packet size. Must not be greater than BLE_MIDI_TX_PACKET_MAX_SIZE */
 	uint16_t tx_buf_max_size;
-	/* Current packet size. Must not be greater than max_size. */
+	/* Current packet size. Must not be greater than tx_buf_max_size. */
 	uint16_t tx_buf_size;
 	/* Status byte of the previous message */
 	uint8_t prev_status_byte;
