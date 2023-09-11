@@ -236,6 +236,16 @@ void test_too_large_timestamp()
 	assert_payload_equals(&writer, expected_payload, sizeof(expected_payload));
 }
 
+static void test_parse_invalid_header_byte() {
+	printf("Parsing a packet with an invalid header byte should fail\n \n");
+	uint8_t payload[] = {
+		0x03,			        // invalid packet header
+		0x8a, 0x90, 0x69, 0x7f, // note on w timestamp
+	};
+	num_parsed_messages = 0;
+	assert_error_code(ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb), BLE_MIDI_ERROR_INVALID_HEADER_BYTE);
+}
+
 void test_running_status_with_one_rt()
 {
 	midi_msg_t messages[] = {
@@ -555,6 +565,7 @@ int main(int argc, char *argv[])
 {
 	test_timestamp_byte_wrapping();
 	test_too_large_timestamp();
+	test_parse_invalid_header_byte();
 	test_running_status_disabled();
 	test_running_status_with_one_rt();
 	test_running_status_with_two_rt();
