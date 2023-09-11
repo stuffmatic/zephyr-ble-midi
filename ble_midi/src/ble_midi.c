@@ -204,8 +204,14 @@ static struct bt_gatt_cb gatt_callbacks = {.att_mtu_updated =
 
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
-	int tx_running_status = CONFIG_BLE_MIDI_SEND_RUNNING_STATUS;
-	int tx_note_off_as_note_on = CONFIG_BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON;
+	int tx_running_status = 0;
+	#ifdef CONFIG_BLE_MIDI_SEND_RUNNING_STATUS
+	tx_running_status = 1;
+	#endif
+	int tx_note_off_as_note_on = 0;
+	#ifdef CONFIG_BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON
+	tx_note_off_as_note_on = 1
+	#endif
 	ble_midi_writer_init(&sysex_tx_writer, tx_running_status, tx_note_off_as_note_on);
 	ble_midi_writer_init(&tx_writer, tx_running_status, tx_note_off_as_note_on);
 

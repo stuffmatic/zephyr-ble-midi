@@ -7,11 +7,11 @@ if BLE_MIDI
 
 config BLE_MIDI_SEND_RUNNING_STATUS
   bool "Enable running status for transmitted MIDI messages"
-	default y
+	default n
 
 config BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON
   bool "Represent note off messages as note on with zero velocity. Increases running status efficiency."
-  default y
+  default n
 
 config BLE_MIDI_NRF_BATCH_TX
   depends on RING_BUFFER
