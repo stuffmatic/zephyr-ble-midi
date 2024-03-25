@@ -18,7 +18,7 @@ config BLE_MIDI_TX_PACKET_MAX_SIZE
   default 128
 
 choice BLE_MIDI_TX_MODE
-    bool "Foo choice"
+    bool "Determines how transmission of BLE packets is triggered"
     default BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
 
 config BLE_MIDI_TX_MODE_SINGLE_MSG
