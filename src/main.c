@@ -68,14 +68,16 @@ static K_WORK_DEFINE(midi_msg_work, midi_msg_work_cb);
 
 /************************ Buttons ************************/
 
-#define BUTTON_COUNT	      3
+#define BUTTON_COUNT	      4
 #define BUTTON_TX_NON_SYSEX   0
 #define BUTTON_TX_SYSEX_SHORT 1
 #define BUTTON_TX_SYSEX_LONG  2
+#define BUTTON_MANUAL_TX_FLUSH 3
 static const struct gpio_dt_spec buttons[BUTTON_COUNT] = {
 	GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw0), gpios, {0}),
 	GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw1), gpios, {0}),
-	GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw2), gpios, {0})};
+	GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw2), gpios, {0}),
+	GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw3), gpios, {0})};
 static struct gpio_callback button_cb_data;
 
 static void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
@@ -101,7 +103,7 @@ static void init_buttons()
 	}
 
 	gpio_init_callback(&button_cb_data, button_pressed,
-			   BIT(buttons[0].pin) | BIT(buttons[1].pin) | BIT(buttons[2].pin));
+			   BIT(buttons[0].pin) | BIT(buttons[1].pin) | BIT(buttons[2].pin) | BIT(buttons[3].pin));
 	int ret = gpio_add_callback(buttons[0].port, &button_cb_data);
 	__ASSERT_NO_MSG(ret == 0);
 }
@@ -232,6 +234,10 @@ void main(void)
 				sample_app_state.sysex_tx_in_progress = 1;
 				sample_app_state.sysex_tx_data_byte_count = 0;
 				ble_midi_tx_sysex_start();
+			} else if (button_idx == BUTTON_MANUAL_TX_FLUSH) {
+				#ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL
+				ble_midi_tx_buffered_msgs();
+				#endif
 			}
 		}
 	}

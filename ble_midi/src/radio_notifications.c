@@ -35,10 +35,10 @@ int radio_notifications_init(radio_notification_cb_t callback) {
 
 }
 
-void radio_notifications_enable() {
-    irq_enable(TEMP_IRQn);
-}
-
-void radio_notifications_disable() {
-    irq_disable(TEMP_IRQn);
+void set_radio_notifications_enabled(int enabled) {
+    if (enabled) {
+        irq_enable(TEMP_IRQn);
+    } else {
+        irq_disable(TEMP_IRQn);
+    }
 }

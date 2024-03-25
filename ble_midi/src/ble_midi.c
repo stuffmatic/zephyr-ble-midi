@@ -11,11 +11,11 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
 
-#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
+#ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 #include <zephyr/init.h>
 #include <zephyr/sys/ring_buffer.h>
 
-#endif /* CONFIG_BLE_MIDI_NRF_BATCH_TX */
+#endif /* CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF */
 
 static uint16_t timestamp_ms()
 {
@@ -40,6 +40,9 @@ void on_service_availability_changed(int available) {
 	if (context.user_callbacks.available_cb) {
 		context.user_callbacks.available_cb(available);
 	}
+	#ifdef CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
+	set_radio_notifications_enabled(available);
+	#endif
 }
 
 /************* BLE SERVICE CALLBACKS **************/
@@ -89,9 +92,9 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service, BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SE
 					      midi_write_cb, NULL),
 		       BT_GATT_CCC(midi_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), );
 
-/********* NRF BATCHED TX STUFF **********/
+/********* Buffered tx stuff **********/
 
-#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
+#ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 atomic_t has_tx_data = ATOMIC_INIT(0x00);
 RING_BUF_DECLARE(msg_ringbuf, 128);
 RING_BUF_DECLARE(sysex_ringbuf, 128);
@@ -142,7 +145,7 @@ static void midi_msg_work_cb(struct k_work *w)
 	atomic_dec(&context.pending_midi_msg_work_count);
 }
 
-#endif /* CONFIG_BLE_MIDI_NRF_BATCH_TX */
+#endif /* CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF */
 
 static void on_notify_done(struct bt_conn *conn, void *user_data)
 {
@@ -223,10 +226,6 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		LOG_INF("Got conn. interval %d ms, requesting interval %d ms with error %d",
 			BT_CONN_INTERVAL_TO_MS(info.le.interval), BT_CONN_INTERVAL_TO_MS(INTERVAL_MIN), e);
 	}
-
-#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
-	radio_notifications_enable();
-#endif
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
@@ -234,9 +233,6 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	LOG_INF("Device disconnected");
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
 	on_service_availability_changed(0);
-#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
-	radio_notifications_disable();
-#endif
 }
 
 static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t latency,
@@ -265,7 +261,7 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks)
 	context.user_callbacks.sysex_start_cb = callbacks->sysex_start_cb;
 	context.user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 	context.user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
-#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
+#ifdef CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
 	radio_notifications_init(radio_notif_handler);
 #endif
 	LOG_INF("Initialized BLE MIDI");
@@ -273,17 +269,17 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks)
 
 int ble_midi_tx_msg(uint8_t *bytes)
 {
-#ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
-	/* Enqueue the MIDI message ... */
-	ring_buf_put(&msg_ringbuf, bytes, 3);
-	/* ... and submit a work item for adding the message to the next outgoing packet. */
-	int submit_result = k_work_submit(&midi_msg_work);
-	atomic_inc(&context.pending_midi_msg_work_count);
-#else
+#ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 	/* Send a single message packet. */
 	ble_midi_writer_reset(&context.tx_writer);
 	ble_midi_writer_add_msg(&context.tx_writer, bytes, timestamp_ms());
 	return send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
+#else
+	/* Enqueue the MIDI message ... */
+	ring_buf_put(&msg_ringbuf, bytes, 3);
+	/* ... and submit a work item for adding the message to the next outgoing packet. */
+	atomic_inc(&context.pending_midi_msg_work_count);
+	int submit_result = k_work_submit(&midi_msg_work);
 #endif
 }
 
@@ -317,3 +313,13 @@ int ble_midi_tx_sysex_end()
 	ble_midi_writer_end_sysex_msg(&context.sysex_tx_writer, timestamp_ms());
 	return send_packet(context.sysex_tx_writer.tx_buf, context.sysex_tx_writer.tx_buf_size);
 }
+
+#ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL
+/**
+ * 
+ */
+void ble_midi_tx_buffered_msgs()
+{
+	radio_notif_handler();
+}
+#endif

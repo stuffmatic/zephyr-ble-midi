@@ -13,14 +13,26 @@ config BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON
   bool "Represent note off messages as note on with zero velocity. Increases running status efficiency."
   default n
 
-config BLE_MIDI_NRF_BATCH_TX
-  depends on RING_BUFFER
-  bool ""
-  default n
-
 config BLE_MIDI_TX_PACKET_MAX_SIZE
   int ""
   default 128
+
+choice BLE_MIDI_TX_MODE
+    bool "Foo choice"
+    default BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
+
+config BLE_MIDI_TX_MODE_SINGLE_MSG
+    bool "Outgoing MIDI messages are sent in separate BLE packets."
+
+config BLE_MIDI_TX_MODE_MANUAL
+    bool "Outgoing MIDI messages are buffered but not sent until the caller decides to do so."
+    select RING_BUFFER
+
+config BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
+    bool "Outgoing MIDI messages are buffered and sent just before the next connection event using MPSL radio notifications."
+    select RING_BUFFER
+
+endchoice
 
 module = BLE_MIDI
 module-str = BLE MIDI
