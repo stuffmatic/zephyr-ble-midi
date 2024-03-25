@@ -11,7 +11,7 @@
 /** Called when the BLE MIDI service becomes available/unavailable. */
 typedef void (*ble_midi_available_cb_t)(uint32_t is_available);
 /** Called when a BLE MIDI packet has just been sent. */
-typedef void (*ble_midi_tx_available_cb_t)();
+typedef void (*ble_midi_tx_done_cb_t)();
 /** Called when a non-sysex message has been parsed */
 typedef void (*ble_midi_message_cb_t)(uint8_t *bytes, uint8_t num_bytes, uint16_t timestamp);
 /** Called when a sysex message starts */
@@ -24,7 +24,7 @@ typedef void (*ble_midi_sysex_end_cb_t)(uint16_t timestamp);
 /** Callbacks set to NULL are ignored. */
 struct ble_midi_callbacks {
 	ble_midi_available_cb_t available_cb;
-	ble_midi_tx_available_cb_t tx_available_cb;
+	ble_midi_tx_done_cb_t tx_done_cb;
 	ble_midi_message_cb_t midi_message_cb;
 	ble_midi_sysex_start_cb_t sysex_start_cb;
 	ble_midi_sysex_data_cb_t sysex_data_cb;

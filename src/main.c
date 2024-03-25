@@ -117,7 +117,7 @@ static void ble_midi_available_cb(int is_available)
 	sample_app_state.ble_midi_is_available = is_available;
 }
 
-static void tx_available_cb()
+static void tx_done_cb()
 {
 	if (sample_app_state.sysex_tx_in_progress) {
 		if (sample_app_state.sysex_tx_data_byte_count == SYSEX_TX_MESSAGE_SIZE) {
@@ -189,7 +189,7 @@ void main(void)
 
 	/* Must be called after bt_enable */
 	struct ble_midi_callbacks midi_callbacks = {.available_cb = ble_midi_available_cb,
-						    .tx_available_cb = tx_available_cb,
+						    .tx_done_cb = tx_done_cb,
 						    .midi_message_cb = ble_midi_message_cb,
 						    .sysex_start_cb = ble_midi_sysex_start_cb,
 						    .sysex_data_cb = ble_midi_sysex_data_cb,
