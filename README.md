@@ -26,7 +26,7 @@ The [sample app](src/main.c) shows how to send and receive MIDI data. The app re
 
 ## nRF multi-core considerations
 
-By default, this project assumes that the core that runs the BLE MIDI service has a radio peripheral and that the MPSL radio notifications API is available. This is true for a single core SoC like the nRF52840 or when running the entire application on the network core of the nRF5340. When running the BLE controller and host on separate cores, you currently have these options:
+By default, this project assumes that the core that runs the BLE MIDI service has a radio peripheral and that the MPSL radio notifications API is available. This is true for a single core SoC like the nRF52840 or when running the entire application on the network core of a multi core SoC like the nRF5340. When running the BLE controller and host on separate cores, you currently have these options:
 
 * Send one MIDI message per BLE packet using `CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG` (may have a negative impact on latency)
 * Roll your own mechanism for relaying radio notifications from the network core to the application core to achieve BLE packet transmission synchronized to the start of connection events. See `CONFIG_BLE_MIDI_TX_MODE_MANUAL`.
