@@ -35,6 +35,12 @@ static void log_buffer(const char *tag, uint8_t *bytes, uint32_t num_bytes)
 	printk("\n");
 }
 
+void on_service_availability_changed(int available) {
+	LOG_INF("BLE MIDI service available: %d", available);
+	if (context.user_callbacks.available_cb) {
+		context.user_callbacks.available_cb(available);
+	}
+}
 
 /************* BLE SERVICE CALLBACKS **************/
 
@@ -67,8 +73,8 @@ static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value
 
 	/* MIDI I/O characteristic notification has been turned on.
 			Notify the user that BLE MIDI is available. */
-	if (context.user_callbacks.available_cb) {
-		context.user_callbacks.available_cb(notification_enabled);
+	if (notification_enabled) {
+		on_service_availability_changed(1);
 	}
 }
 
@@ -185,7 +191,7 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	context.tx_writer.tx_buf_max_size = tx_buf_max_size;
 	context.sysex_tx_writer.tx_buf_max_size = tx_buf_max_size;
 	
-	LOG_INF("tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
+	LOG_INF("MTU updatd: tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
 		tx_buf_max_size);
 }
 
@@ -227,9 +233,7 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	LOG_INF("Device disconnected");
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
-	if (context.user_callbacks.available_cb) {
-		context.user_callbacks.available_cb(0);
-	}
+	on_service_availability_changed(0);
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
 	radio_notifications_disable();
 #endif
