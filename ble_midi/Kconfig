@@ -20,7 +20,7 @@ config BLE_MIDI_NRF_BATCH_TX
 
 config BLE_MIDI_TX_PACKET_MAX_SIZE
   int ""
-  default 32
+  default 128
 
 module = BLE_MIDI
 module-str = BLE MIDI

@@ -6,6 +6,7 @@
 #include <ble_midi/ble_midi.h>
 #include "ble_midi_packet.h"
 #include "ble_midi_context.h"
+#include "radio_notifications.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
@@ -13,7 +14,7 @@ LOG_MODULE_REGISTER(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
 #include <zephyr/init.h>
 #include <zephyr/sys/ring_buffer.h>
-#include <mpsl_radio_notification.h>
+
 #endif /* CONFIG_BLE_MIDI_NRF_BATCH_TX */
 
 static uint16_t timestamp_ms()
@@ -62,7 +63,7 @@ static ssize_t midi_write_cb(struct bt_conn *conn, const struct bt_gatt_attr *at
 static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
 	int notification_enabled = value == BT_GATT_CCC_NOTIFY;
-	LOG_INF("BLE MIDI characteristic notification enabled: %d", notification_enabled);
+	LOG_INF("I/O characteristic notification enabled: %d", notification_enabled);
 
 	/* MIDI I/O characteristic notification has been turned on.
 			Notify the user that BLE MIDI is available. */
@@ -85,7 +86,6 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service, BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SE
 /********* NRF BATCHED TX STUFF **********/
 
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
-#define RADIO_NOTIF_PRIORITY 1
 atomic_t has_tx_data = ATOMIC_INIT(0x00);
 RING_BUF_DECLARE(msg_ringbuf, 128);
 RING_BUF_DECLARE(sysex_ringbuf, 128);
@@ -112,27 +112,9 @@ static void radio_notif_handler(void)
 	}
 }
 
-/**
- * Configures an interrupt that is triggered just before each BLE connection event.
- * Used to trigger transmission of BLE MIDI data accumulated between connection events.
- */
-static void radio_notif_setup()
-{
-	int rc = mpsl_radio_notification_cfg_set(MPSL_RADIO_NOTIFICATION_TYPE_INT_ON_ACTIVE,
-						 MPSL_RADIO_NOTIFICATION_DISTANCE_420US, TEMP_IRQn);
-	if (rc == 0) {
-		IRQ_CONNECT(TEMP_IRQn, RADIO_NOTIF_PRIORITY, radio_notif_handler, NULL, 0);
-		LOG_INF("Finished setting up connection event interrupt");
-	} else {
-		LOG_ERR("mpsl_radio_notification_cfg_set failed with error %d", rc);
-	}
-
-	__ASSERT(rc == 0, "mpsl_radio_notification_cfg_set failed");
-}
-
+/* A work item handler that adds an enqueued MIDI message to the tx packet */
 static void midi_msg_work_cb(struct k_work *w);
 static K_WORK_DEFINE(midi_msg_work, midi_msg_work_cb);
-/* A work item handler that adds an enqueued MIDI message to the tx packet */
 static void midi_msg_work_cb(struct k_work *w)
 {
 	/* Get the MIDI bytes to send. */
@@ -203,7 +185,7 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	context.tx_writer.tx_buf_max_size = tx_buf_max_size;
 	context.sysex_tx_writer.tx_buf_max_size = tx_buf_max_size;
 	
-	LOG_INF("MTU changed to tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
+	LOG_INF("tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
 		tx_buf_max_size);
 }
 
@@ -237,7 +219,7 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 	}
 
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
-	irq_enable(TEMP_IRQn);
+	radio_notifications_enable();
 #endif
 }
 
@@ -249,7 +231,7 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 		context.user_callbacks.available_cb(0);
 	}
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
-	irq_disable(TEMP_IRQn);
+	radio_notifications_disable();
 #endif
 }
 
@@ -280,7 +262,7 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks)
 	context.user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 	context.user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
 #ifdef CONFIG_BLE_MIDI_NRF_BATCH_TX
-	radio_notif_setup();
+	radio_notifications_init(radio_notif_handler);
 #endif
 	LOG_INF("Initialized BLE MIDI");
 }
