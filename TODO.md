@@ -1,6 +1,7 @@
 * sysex continuation where end byte is the first byte in the last packet. handle this in parser? or treat this as sysex continuation packet?
 * disconnect API?
 * custom work queue?
+* init radio notifications early
 * disconnect when using debug_optimizations
 
 
