@@ -64,8 +64,9 @@ int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes);
 int ble_midi_tx_sysex_end();
 
 #ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL
+
 /**
- * 
+ * Send buffered MIDI messages, if any.
  */
 void ble_midi_tx_buffered_msgs();
 #endif
