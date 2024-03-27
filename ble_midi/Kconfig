@@ -19,7 +19,7 @@ config BLE_MIDI_TX_PACKET_MAX_SIZE
 
 choice BLE_MIDI_TX_MODE
     bool "Determines how transmission of BLE packets is triggered"
-    default BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
+    default BLE_MIDI_TX_MODE_SINGLE_MSG
 
 config BLE_MIDI_TX_MODE_SINGLE_MSG
     bool "Outgoing MIDI messages are sent in separate BLE packets."
