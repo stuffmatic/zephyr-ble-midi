@@ -292,16 +292,16 @@ int ble_midi_tx_sysex_start()
 int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
 {
 	ble_midi_writer_reset(&context.sysex_tx_writer);
-	int add_rc =
+	int add_result =
 		ble_midi_writer_add_sysex_data(&context.sysex_tx_writer, bytes, num_bytes, timestamp_ms());
-	if (add_rc < 0) { // TODO: how to interpret 0?
-		LOG_ERR("ble_midi_writer_add_sysex_data failed with error %d", add_rc);
+	if (add_result < 0) {
+		LOG_ERR("ble_midi_writer_add_sysex_data failed with error %d", add_result);
 		return -EINVAL;
 	}
 
-	int send_rc = send_packet(context.sysex_tx_writer.tx_buf, add_rc);
+	int send_rc = send_packet(context.sysex_tx_writer.tx_buf, add_result);
 	if (send_rc == 0) {
-		return add_rc; /* Return number of sent bytes on success */
+		return add_result; /* Return number of sent bytes on success */
 	}
 	return send_rc;
 }
