@@ -98,7 +98,6 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service, BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SE
 atomic_t has_tx_data = ATOMIC_INIT(0x00);
 RING_BUF_DECLARE(msg_ringbuf, 128);
 RING_BUF_DECLARE(sysex_ringbuf, 128);
-struct k_work_q work_q; // <- TODO: use this?
 
 /* A work item handler for sending the contents of the tx packet */
 static void radio_notif_work_cb(struct k_work *w)
