@@ -1,8 +1,12 @@
 * sysex continuation where end byte is the first byte in the last packet. handle this in parser? or treat this as sysex continuation packet?
-* init radio notifications early
 * investigate disconnect when using debug_optimizations
 
-# ble stuff
+# Radio notifications refactor
 
-* 2M PHY?
-* LLPM?
+## v2.6.0+
+
+Event trigger API + delayed work. CONFIG_NOTIF_DISTANCE_US
+
+## 
+
+* MPSL radio notifications

@@ -9,6 +9,8 @@ typedef void (*radio_notification_cb_t)();
  */
 int radio_notifications_init(radio_notification_cb_t callback);
 
+int radio_notifications_schedule_next();
+
 void radio_notifications_enable();
 void radio_notifications_disable();
 

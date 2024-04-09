@@ -5,5 +5,5 @@ if(CONFIG_BLE_MIDI)
 
   zephyr_library()
   zephyr_library_sources(./src/ble_midi_packet.c ./src/ble_midi.c ./src/ble_midi_context.c)
-  zephyr_library_sources_ifdef(CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF, ./src/radio_notifications.c)
+  zephyr_library_sources_ifdef(CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT, ./src/radio_notifications.c)
 endif()

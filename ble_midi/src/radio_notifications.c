@@ -1,15 +1,18 @@
 #include <mpsl_radio_notification.h>
 #include <zephyr/kernel.h>
+#include <ncs_version.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
 
 #include "radio_notifications.h"
 
+static radio_notification_cb_t user_callback = NULL;
+
+#if NCS_VERSION_NUMBER < 0x20600
+// Pre v2.6.0, use MPSL radio notifications (removed in v2.6.0)
 
 #define RADIO_NOTIF_PRIORITY 1
-
-static radio_notification_cb_t user_callback = NULL;
 
 /* Called just before each BLE connection event. */
 static void radio_notif_handler(void)
@@ -42,3 +45,13 @@ void set_radio_notifications_enabled(int enabled) {
         irq_disable(TEMP_IRQn);
     }
 }
+
+#else
+
+// v2.6.0 or newer. MPSL radio notifications API is no longer available.
+// https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.6.0/nrfxlib/mpsl/CHANGELOG.html
+// Use event trigger API to get radio notifications.
+
+TODO
+
+#endif

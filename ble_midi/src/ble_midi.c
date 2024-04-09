@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
 #include <zephyr/init.h>
 #include <zephyr/sys/ring_buffer.h>
 
-#endif /* CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF */
+#endif /* CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT */
 
 static uint16_t timestamp_ms()
 {
@@ -40,7 +40,7 @@ void on_service_availability_changed(int available) {
 	if (context.user_callbacks.available_cb) {
 		context.user_callbacks.available_cb(available);
 	}
-	#ifdef CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
+	#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
 	set_radio_notifications_enabled(available);
 	#endif
 }
@@ -144,7 +144,7 @@ static void midi_msg_work_cb(struct k_work *w)
 	atomic_dec(&context.pending_midi_msg_work_count);
 }
 
-#endif /* CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF */
+#endif /* CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT */
 
 static void on_notify_done(struct bt_conn *conn, void *user_data)
 {
@@ -193,7 +193,7 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	context.tx_writer.tx_buf_max_size = tx_buf_max_size;
 	context.sysex_tx_writer.tx_buf_max_size = tx_buf_max_size;
 	
-	LOG_INF("MTU updatd: tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
+	LOG_INF("MTU updated: tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
 		tx_buf_max_size);
 }
 
@@ -229,7 +229,7 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	LOG_INF("Device disconnected");
+	LOG_INF("Device disconnected, reason %d", reason);
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
 	on_service_availability_changed(0);
 }
@@ -260,7 +260,7 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks)
 	context.user_callbacks.sysex_start_cb = callbacks->sysex_start_cb;
 	context.user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 	context.user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
-#ifdef CONFIG_BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
+#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
 	radio_notifications_init(radio_notif_handler);
 #endif
 	LOG_INF("Initialized BLE MIDI");

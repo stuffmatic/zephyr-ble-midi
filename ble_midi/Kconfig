@@ -28,7 +28,7 @@ config BLE_MIDI_TX_MODE_MANUAL
     bool "Outgoing MIDI messages are buffered but not sent until the caller decides to do so."
     select RING_BUFFER
 
-config BLE_MIDI_TX_MODE_NRF_RADIO_NOTIF
+config BLE_MIDI_TX_MODE_CONN_EVENT
     bool "Outgoing MIDI messages are buffered and sent just before the next connection event using MPSL radio notifications."
     select RING_BUFFER
 
