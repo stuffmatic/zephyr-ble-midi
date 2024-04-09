@@ -193,7 +193,7 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	context.tx_writer.tx_buf_max_size = tx_buf_max_size;
 	context.sysex_tx_writer.tx_buf_max_size = tx_buf_max_size;
 	
-	LOG_INF("MTU updatd: tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
+	LOG_INF("MTU updated: tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
 		tx_buf_max_size);
 }
 
