@@ -229,7 +229,7 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	LOG_INF("Device disconnected");
+	LOG_INF("Device disconnected, reason %d", reason);
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
 	on_service_availability_changed(0);
 }
