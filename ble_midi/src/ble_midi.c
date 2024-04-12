@@ -40,9 +40,6 @@ void on_service_availability_changed(int available) {
 	if (context.user_callbacks.available_cb) {
 		context.user_callbacks.available_cb(available);
 	}
-	#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	set_radio_notifications_enabled(available);
-	#endif
 }
 
 /************* BLE SERVICE CALLBACKS **************/
@@ -77,7 +74,7 @@ static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value
 	/* MIDI I/O characteristic notification has been turned on.
 			Notify the user that BLE MIDI is available. */
 	if (notification_enabled) {
-		on_service_availability_changed(1);
+		on_service_availability_changed(attr->user_data);
 	}
 }
 
@@ -134,7 +131,7 @@ static void midi_msg_work_cb(struct k_work *w)
 	/* Signal that there is data to send at the next connection event */
 	atomic_set_bit(&has_tx_data, 0);
 	
-	// k_sleep(K_MSEC(10)); 
+	// k_sleep(K_MSEC(10)); // simulate long running work item. for testing re-submission logic.
 
 	int unfinished_midi_msg_work = atomic_get(&context.pending_midi_msg_work_count);
 	if (unfinished_midi_msg_work > 1) {
@@ -225,6 +222,9 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		LOG_INF("Got conn. interval %d ms, requesting interval %d ms with error %d",
 			BT_CONN_INTERVAL_TO_MS(info.le.interval), BT_CONN_INTERVAL_TO_MS(INTERVAL_MIN), e);
 	}
+#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
+	radio_notifications_set_enabled(conn, 1);
+#endif
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
@@ -232,6 +232,9 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	LOG_INF("Device disconnected, reason %d", reason);
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
 	on_service_availability_changed(0);
+#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
+	radio_notifications_set_enabled(conn, 0);
+#endif
 }
 
 static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t latency,
@@ -239,6 +242,9 @@ static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t l
 {
 	LOG_INF("Conn. params changed: interval: %d ms, latency: %d, timeout: %d",
 		BT_CONN_INTERVAL_TO_MS(interval), latency, timeout);
+#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
+	radio_notifications_refresh_conn_interval(conn);
+#endif
 }
 
 BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {.connected = on_connected,
