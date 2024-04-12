@@ -181,7 +181,7 @@ static const struct bt_data sd[] = {
 	BT_DATA_BYTES(BT_DATA_UUID128_ALL, BLE_MIDI_SERVICE_UUID),
 };
 
-void main(void)
+int main(void)
 {
 	init_leds();
 	init_buttons();
@@ -199,7 +199,7 @@ void main(void)
 	ble_midi_init(&midi_callbacks);
 
 	int ad_err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
-	printk("bt_le_adv_start %d\n", ad_err);
+	// printk("bt_le_adv_start %d\n", ad_err);
 
 	while (1) {
 		/* Poll button events */
