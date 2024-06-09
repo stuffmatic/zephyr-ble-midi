@@ -6,7 +6,7 @@
 #include <ble_midi/ble_midi.h>
 #include "ble_midi_packet.h"
 #include "ble_midi_context.h"
-#include "radio_notifications.h"
+#include "connection_event_notifications.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
@@ -26,17 +26,8 @@ struct ble_midi_context context;
 
 int send_packet(uint8_t *bytes, int num_bytes);
 
-static void log_buffer(const char *tag, uint8_t *bytes, uint32_t num_bytes)
-{
-	printk("%s ", tag);
-	for (int i = 0; i < num_bytes; i++) {
-		printk("%02x ", ((uint8_t *)bytes)[i]);
-	}
-	printk("\n");
-}
-
 void on_service_availability_changed(int available) {
-	LOG_INF("BLE MIDI service available: %d", available);
+	LOG_INF("service available: %d", available);
 	if (context.user_callbacks.available_cb) {
 		context.user_callbacks.available_cb(available);
 	}
@@ -74,7 +65,7 @@ static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value
 	/* MIDI I/O characteristic notification has been turned on.
 			Notify the user that BLE MIDI is available. */
 	if (notification_enabled) {
-		on_service_availability_changed(attr->user_data);
+		on_service_availability_changed(notification_enabled);
 	}
 }
 
@@ -223,7 +214,7 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 			BT_CONN_INTERVAL_TO_MS(info.le.interval), BT_CONN_INTERVAL_TO_MS(INTERVAL_MIN), e);
 	}
 #ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	radio_notifications_set_enabled(conn, 1);
+	conn_event_notifications_set_enabled(conn, 1);
 #endif
 }
 
@@ -233,7 +224,7 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
 	on_service_availability_changed(0);
 #ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	radio_notifications_set_enabled(conn, 0);
+	conn_event_notifications_set_enabled(conn, 0);
 #endif
 }
 
@@ -243,7 +234,7 @@ static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t l
 	LOG_INF("Conn. params changed: interval: %d ms, latency: %d, timeout: %d",
 		BT_CONN_INTERVAL_TO_MS(interval), latency, timeout);
 #ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	radio_notifications_refresh_conn_interval(conn);
+	conn_event_notifications_refresh_conn_interval(conn);
 #endif
 }
 
@@ -267,7 +258,7 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks)
 	context.user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 	context.user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
 #ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	radio_notifications_init(radio_notif_handler);
+	conn_event_notifications_init(radio_notif_handler);
 #endif
 	LOG_INF("Initialized BLE MIDI");
 }
