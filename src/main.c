@@ -6,6 +6,41 @@
 #include <zephyr/sys/ring_buffer.h>
 #include <ble_midi/ble_midi.h>
 
+////////////////////// TIMER TEST //////////////////////
+#include <nrfx_timer.h>
+
+
+#define NRFX_TIMER_IDX 0
+#define NRFX_TIMER_IRQ TIMER0_IRQn
+#define TIMER_PERIOD_US 3000000
+static const nrfx_timer_t timer = NRFX_TIMER_INSTANCE(NRFX_TIMER_IDX);
+
+static void timer_handler(nrf_timer_event_t event_type, void * p_context) {
+	printk("OMG\n");
+	int a = 0;
+}
+
+void timer_init() {
+	
+	uint32_t base_frequency = NRF_TIMER_BASE_FREQUENCY_GET(timer.p_reg);
+	nrfx_timer_config_t timer_cfg = NRFX_TIMER_DEFAULT_CONFIG(base_frequency);
+	timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_32;
+	
+    int init_result = nrfx_timer_init(&timer, &timer_cfg, timer_handler);
+	__ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
+	uint32_t tick_count = nrfx_timer_us_to_ticks(&timer, TIMER_PERIOD_US);
+	nrfx_timer_extended_compare(&timer,
+                                NRF_TIMER_CC_CHANNEL0,
+                                tick_count,
+                                NRF_TIMER_SHORT_COMPARE0_STOP_MASK,
+                                1);
+	IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_0_irq_handler, 0);
+	irq_enable(NRFX_TIMER_IRQ);
+	nrfx_timer_enable(&timer);
+}
+
+////////////////////// TIMER TEST //////////////////////
+
 /************************ App state ************************/
 K_MSGQ_DEFINE(button_event_q, sizeof(uint8_t), 128, 4);
 
@@ -200,6 +235,8 @@ int main(void)
 
 	int ad_err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	// printk("bt_le_adv_start %d\n", ad_err);
+
+	timer_init();
 
 	while (1) {
 		/* Poll button events */
