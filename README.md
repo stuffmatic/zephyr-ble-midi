@@ -30,8 +30,9 @@ The [sample app](src/main.c) shows how to send and receive MIDI data. The app re
 * `CONFIG_BLE_MIDI_SEND_NOTE_OFF_AS_NOTE_ON` - Determines if transmitted note off messages should be represented as note on messages with zero velocity, which increases running status efficiency. Defaults to `n`.
 * `CONFIG_BLE_MIDI_TX_PACKET_MAX_SIZE` - Determines the maximum size of transmitted BLE MIDI packets (clamped to the MTU - 3).
 * Use one of the following options to control how transmission of outgoing BLE packets is triggered:
-  * `CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG` - Outgoing MIDI messages are sent in separate BLE packets. May have a negative impact on latency but does not rely on SoftDevice specific notifications. This is the default option.
-  * `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT` - Buffer outgoing MIDI messages and send them in a single BLE packet just before the next connection event to reduce latency. Requires nRF Connect SDK and Nordic's SoftDevice.
+  * `CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG` - Outgoing MIDI messages are sent in separate BLE packets. This is the default option. May have a negative impact on latency but does not rely on nRF Connect SDK specific APIs and should work out of the box on nRF multi core SoCs.
+  * `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT` - Buffer outgoing MIDI messages and send them in a single BLE packet just before the next connection event to reduce latency. Use with nRF Connect SDK v2.6.0 or newer. Relies on the Event Trigger API added in v2.6.0.
+  * `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY` - Use with nRF Connect SDK versions older than v2.6.0. The same as `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT` but relies on the MPSL radio notifications API that was removed in v2.6.0.
   * `CONFIG_BLE_MIDI_TX_MODE_MANUAL` - Buffer outgoing MIDI messages and leave it up to the caller to trigger transmission. Can be useful in combination with a custom connection event notification mechanism.
 
 ## nRF multi-core considerations

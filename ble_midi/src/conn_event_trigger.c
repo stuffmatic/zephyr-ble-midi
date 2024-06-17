@@ -4,54 +4,9 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
 
-#include "connection_event_notifications.h"
+#include "conn_event_trigger.h"
 
-static conn_event_notification_cb_t user_callback = NULL;
-
-#if NCS_VERSION_NUMBER < 0x20600
-// Pre v2.6.0, use MPSL radio notifications (removed in v2.6.0)
-
-#include <mpsl_radio_notification.h>
-
-#define RADIO_NOTIF_PRIORITY 1
-
-/* Called just before each BLE connection event. */
-static void radio_notif_handler(void)
-{
-    if (user_callback)
-    {
-        user_callback();
-    }
-}
-
-int conn_event_notifications_init(conn_event_notification_cb_t callback) {    
-    user_callback = callback;
-	int rc = mpsl_radio_notification_cfg_set(MPSL_RADIO_NOTIFICATION_TYPE_INT_ON_ACTIVE,
-						 MPSL_RADIO_NOTIFICATION_DISTANCE_420US, TEMP_IRQn);
-	if (rc == 0) {
-		IRQ_CONNECT(TEMP_IRQn, RADIO_NOTIF_PRIORITY, radio_notif_handler, NULL, 0);
-		LOG_INF("Finished setting up mpsl connection event interrupt");
-	} else {
-		LOG_ERR("mpsl_radio_notification_cfg_set failed with error %d", rc);
-	}
-
-	__ASSERT(rc == 0, "mpsl_radio_notification_cfg_set failed");
-}
-
-void conn_event_notifications_refresh_conn_interval(struct bt_conn *conn)
-{
-	// Nothing when using MPSL radio notifications
-}
-
-void conn_event_notifications_set_enabled(struct bt_conn *conn, int enabled) {
-    if (enabled) {
-        irq_enable(TEMP_IRQn);
-    } else {
-        irq_disable(TEMP_IRQn);
-    }
-}
-
-#else
+static conn_event_trigger_cb_t user_callback = NULL;
 
 // v2.6.0 or newer. MPSL radio notifications API is no longer available.
 // https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.6.0/nrfxlib/mpsl/CHANGELOG.html
@@ -85,13 +40,18 @@ static void timer_handler(nrf_timer_event_t event_type, void * p_context) {
 void timer_init() {
 	uint32_t base_frequency = NRF_TIMER_BASE_FREQUENCY_GET(timer.p_reg);
 	nrfx_timer_config_t timer_cfg = NRFX_TIMER_DEFAULT_CONFIG(base_frequency);
+    // TODO: set lower interrupt priority?
+    // timer_cfg.interrupt_priority = 3;
 	timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_32;
-
-	IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_1_irq_handler, 0);
-	irq_enable(NRFX_TIMER_IRQ);
 	
     int init_result = nrfx_timer_init(&timer, &timer_cfg, timer_handler);
-	__ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
+    if (init_result != NRFX_SUCCESS) {
+        LOG_ERR("nrfx_timer_init result %d", init_result);
+	    __ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
+    }
+
+    IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_1_irq_handler, 0);
+	irq_enable(NRFX_TIMER_IRQ);
 }
 
 void timer_deinit() {
@@ -207,12 +167,12 @@ static int setup_connection_event_trigger(struct bt_conn *conn, bool enable)
 	return 0;
 }
 
-int conn_event_notifications_init(conn_event_notification_cb_t callback)
+int conn_event_trigger_init(conn_event_trigger_cb_t callback)
 {
     user_callback = callback;
 }
 
-void conn_event_notifications_refresh_conn_interval(struct bt_conn *conn)
+void conn_event_trigger_refresh_conn_interval(struct bt_conn *conn)
 {
 	struct bt_conn_info conn_info;
 	int result = bt_conn_get_info(conn, &conn_info);
@@ -224,7 +184,7 @@ void conn_event_notifications_refresh_conn_interval(struct bt_conn *conn)
 	}
 }
 
-void conn_event_notifications_set_enabled(struct bt_conn *conn, int enabled)
+void conn_event_trigger_set_enabled(struct bt_conn *conn, int enabled)
 {	
 	if (enabled) {
 		timer_init();
@@ -233,5 +193,3 @@ void conn_event_notifications_set_enabled(struct bt_conn *conn, int enabled)
 	}
 	setup_connection_event_trigger(conn, enabled);
 }
-
-#endif

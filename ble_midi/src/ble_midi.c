@@ -6,7 +6,7 @@
 #include <ble_midi/ble_midi.h>
 #include "ble_midi_packet.h"
 #include "ble_midi_context.h"
-#include "connection_event_notifications.h"
+#include "conn_event_trigger.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
@@ -213,8 +213,8 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		LOG_INF("Got conn. interval %d ms, requesting interval %d ms with error %d",
 			BT_CONN_INTERVAL_TO_MS(info.le.interval), BT_CONN_INTERVAL_TO_MS(INTERVAL_MIN), e);
 	}
-#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	conn_event_notifications_set_enabled(conn, 1);
+#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
+	conn_event_trigger_set_enabled(conn, 1);
 #endif
 }
 
@@ -223,8 +223,8 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	LOG_INF("Device disconnected, reason %d", reason);
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
 	on_service_availability_changed(0);
-#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	conn_event_notifications_set_enabled(conn, 0);
+#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
+	conn_event_trigger_set_enabled(conn, 0);
 #endif
 }
 
@@ -233,8 +233,8 @@ static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t l
 {
 	LOG_INF("Conn. params changed: interval: %d ms, latency: %d, timeout: %d",
 		BT_CONN_INTERVAL_TO_MS(interval), latency, timeout);
-#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	conn_event_notifications_refresh_conn_interval(conn);
+#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
+	conn_event_trigger_refresh_conn_interval(conn);
 #endif
 }
 
@@ -257,8 +257,8 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks)
 	context.user_callbacks.sysex_start_cb = callbacks->sysex_start_cb;
 	context.user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 	context.user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
-#ifdef CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT
-	conn_event_notifications_init(radio_notif_handler);
+#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
+	conn_event_trigger_init(radio_notif_handler);
 #endif
 	LOG_INF("Initialized BLE MIDI");
 }
