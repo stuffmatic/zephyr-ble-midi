@@ -4,7 +4,7 @@ This is a [Zephyr](https://www.zephyrproject.org/) implementation of the [BLE-MI
 
 To minimize latency, a connection interval of 7.5 ms is requested, which is the smallest interval allowed by the Bluetooth low energy specification. Note that a central may or may not accept this value. 
 
-By default, outgoing MIDI messages are sent in separate BLE packets. When building for nRF SoCs, outgoing non-sysex messages can optionally be buffered and transmitted in a single BLE packet just before the next connection event to reduce latency, see `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT`. The implementation is inspired by [this blog post](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/optimizing-ble-midi-with-regards-to-timing-1293631358).
+By default, outgoing MIDI messages are sent in separate BLE packets. When building for nRF SoCs with nRF Connect SDK, outgoing non-sysex messages can optionally be buffered and transmitted in a single BLE packet just before the next connection event to reduce latency, see `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT`. 
 
 ## Usage
 
@@ -24,13 +24,6 @@ The [sample app](src/main.c) shows how to send and receive MIDI data. The app re
 * __LED 2__ - Toggles on/off when receiving sysex messages
 * __LED 3__ - Toggles on/off when receiving non-sysex messages
 
-## nRF multi-core considerations
-
-When `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT` is enabled, it is assumed that the BLE controller runs on the same core as the BLE MIDI service. This is true for a single core SoC like the nRF52840 or when running the entire application on the network core of a multi core SoC like the nRF5340. When running the BLE controller and host on separate cores, you currently have these options:
-
-* Send one MIDI message per BLE packet using `CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG`.
-* Roll your own mechanism for relaying the appropriate notifications from the network core to the application core to achieve BLE packet transmission synchronized to the start of connection events. See `CONFIG_BLE_MIDI_TX_MODE_MANUAL`.
-
 ## Configuration options
 
 * `CONFIG_BLE_MIDI_SEND_RUNNING_STATUS` - Set to `y` to enable running status (omission of repeated channel message status bytes) in transmitted packets. Defaults to `n`.
@@ -39,4 +32,11 @@ When `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT` is enabled, it is assumed that the BLE
 * Use one of the following options to control how transmission of outgoing BLE packets is triggered:
   * `CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG` - Outgoing MIDI messages are sent in separate BLE packets. May have a negative impact on latency but does not rely on SoftDevice specific notifications. This is the default option.
   * `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT` - Buffer outgoing MIDI messages and send them in a single BLE packet just before the next connection event to reduce latency. Requires nRF Connect SDK and Nordic's SoftDevice.
-  * `CONFIG_BLE_MIDI_TX_MODE_MANUAL` - Buffer outgoing MIDI messages and leave it up to the caller to trigger transmission. Can be useful in combination with a custom connection event notification mechanism, like relaying notifications from the net core to the app core via IPC.
+  * `CONFIG_BLE_MIDI_TX_MODE_MANUAL` - Buffer outgoing MIDI messages and leave it up to the caller to trigger transmission. Can be useful in combination with a custom connection event notification mechanism.
+
+## nRF multi-core considerations
+
+When `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT` is enabled, it is assumed that the BLE controller runs on the same core as the BLE MIDI service. This is true for a single core SoC like the nRF52840 or when running the entire application on the network core of a multi core SoC like the nRF5340. When running the BLE controller and host on separate cores, you currently have these options:
+
+* Send one MIDI message per BLE packet using `CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG`.
+* Roll your own mechanism for relaying the appropriate notifications from the network core to the application core to achieve BLE packet transmission synchronized to the start of connection events. See `CONFIG_BLE_MIDI_TX_MODE_MANUAL`.

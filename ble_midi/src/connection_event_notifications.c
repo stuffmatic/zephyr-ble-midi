@@ -60,6 +60,7 @@ void conn_event_notifications_set_enabled(struct bt_conn *conn, int enabled) {
 #include <sdc_hci_vs.h>
 #include <zephyr/bluetooth/hci.h>
 #include <hal/nrf_egu.h>
+#include <nrfx_timer.h>
 #include <zephyr/kernel.h>
 
 #define PPI_CH_ID      15
@@ -71,22 +72,53 @@ void conn_event_notifications_set_enabled(struct bt_conn *conn, int enabled) {
 
 atomic_t conn_interval_us = ATOMIC_INIT(0);
 
-static void timer_handler(struct k_timer *t)
-{
+#define NRFX_TIMER_IDX 1
+#define NRFX_TIMER_IRQ TIMER1_IRQn
+static const nrfx_timer_t timer = NRFX_TIMER_INSTANCE(NRFX_TIMER_IDX);
+
+static void timer_handler(nrf_timer_event_t event_type, void * p_context) {
 	if (user_callback) {
 		user_callback();
 	}
 }
 
-K_TIMER_DEFINE(timer, timer_handler, NULL);
+void timer_init() {
+	uint32_t base_frequency = NRF_TIMER_BASE_FREQUENCY_GET(timer.p_reg);
+	nrfx_timer_config_t timer_cfg = NRFX_TIMER_DEFAULT_CONFIG(base_frequency);
+	timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_32;
+
+	IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_1_irq_handler, 0);
+	irq_enable(NRFX_TIMER_IRQ);
+	
+    int init_result = nrfx_timer_init(&timer, &timer_cfg, timer_handler);
+	__ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
+}
+
+void timer_deinit() {
+	irq_disable(NRFX_TIMER_IRQ);
+	nrfx_timer_uninit(&timer);
+}
+
+void timer_trigger(uint32_t delay_us) {
+	// https://devzone.nordicsemi.com/f/nordic-q-a/111922/nrfx_timer_extended_compare-fails-assertion-when-timer-is-paused
+	nrfx_timer_disable(&timer);
+	nrfx_timer_clear(&timer);
+	uint32_t tick_count = nrfx_timer_us_to_ticks(&timer, delay_us);
+	nrfx_timer_extended_compare(&timer,
+                                NRF_TIMER_CC_CHANNEL0,
+                                tick_count,
+                                NRF_TIMER_SHORT_COMPARE0_STOP_MASK,
+                                1);
+	nrfx_timer_enable(&timer);
+}
 
 static void egu0_handler(const void *context)
 {
 	nrf_egu_event_clear(NRF_EGU0, NRF_EGU_EVENT_TRIGGERED0);
 	// Set up a timer that fires just before the next connection event
 
-	int dur_us = atomic_get(&conn_interval_us) - CONFIG_BLE_MIDI_CONN_EVENT_NOTIFICATION_DISTANCE_US;
-	k_timer_start(&timer, K_USEC(dur_us > 0 ? dur_us : 0), K_NO_WAIT);
+	int delay_us = atomic_get(&conn_interval_us) - CONFIG_BLE_MIDI_CONN_EVENT_NOTIFICATION_DISTANCE_US;
+	timer_trigger(delay_us < 0 ? 0 : delay_us);
 }
 
 static int setup_connection_event_trigger(struct bt_conn *conn, bool enable)
@@ -147,7 +179,7 @@ static int setup_connection_event_trigger(struct bt_conn *conn, bool enable)
 	cmd_set_trigger->role = SDC_HCI_VS_CONN_EVENT_TRIGGER_ROLE_CONN;
 	cmd_set_trigger->ppi_ch_id = PPI_CH_ID;
 	cmd_set_trigger->period_in_events = 1;
-	cmd_set_trigger->conn_evt_counter_start = 100 + 20; 
+	cmd_set_trigger->conn_evt_counter_start = 0; 
 		// cmd_event_counter_return->next_conn_event_counter + 20;
 
 	if (enable) {
@@ -171,7 +203,7 @@ static int setup_connection_event_trigger(struct bt_conn *conn, bool enable)
 
 	LOG_INF("Configured connection event trigger, enabled %d\n", enable);
 
-	net_buf_unref(rsp);
+	// net_buf_unref(rsp);
 	return 0;
 }
 
@@ -194,6 +226,11 @@ void conn_event_notifications_refresh_conn_interval(struct bt_conn *conn)
 
 void conn_event_notifications_set_enabled(struct bt_conn *conn, int enabled)
 {	
+	if (enabled) {
+		timer_init();
+	} else {
+		timer_deinit();
+	}
 	setup_connection_event_trigger(conn, enabled);
 }
 
