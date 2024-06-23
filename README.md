@@ -20,9 +20,10 @@ The [sample app](src/main.c) shows how to send and receive MIDI data. The app re
 * __Button 2__ - Send a short sysex message
 * __Button 3__ - Send a long, streaming sysex message
 * __Button 4__ - Send enqueued messages (only if `CONFIG_BLE_MIDI_TX_MODE_MANUAL` is set)
-* __LED 1__ - On when connected to a BLE MIDI central
-* __LED 2__ - Toggles on/off when receiving sysex messages
-* __LED 3__ - Toggles on/off when receiving non-sysex messages
+* __LED 1__ - On when connected but not ready to communicate
+* __LED 2__ - On when ready
+* __LED 3__ - Toggles on/off when receiving sysex messages
+* __LED 4__ - Toggles on/off when receiving non-sysex messages
 
 ## Configuration options
 

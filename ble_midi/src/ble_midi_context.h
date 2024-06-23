@@ -7,6 +7,7 @@
 
 struct ble_midi_context {
     atomic_t pending_midi_msg_work_count;
+    ble_midi_ready_state_t ready_state;
     int is_initialized;
     struct ble_midi_writer_t tx_writer;
     struct ble_midi_writer_t sysex_tx_writer;

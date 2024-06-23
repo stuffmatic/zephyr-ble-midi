@@ -8,8 +8,17 @@
 /** UUID of the MIDI data I/O characteristic */
 #define BLE_MIDI_CHAR_UUID    BT_UUID_128_ENCODE(0x7772E5DB, 0x3868, 0x4112, 0xA1A9, 0xF2669D106BF3)
 
-/** Called when the BLE MIDI service becomes available/unavailable. */
-typedef void (*ble_midi_available_cb_t)(uint32_t is_available);
+typedef enum  {
+	/* Not connected */
+	BLE_MIDI_NOT_CONNECTED = 0,
+	/* Connected but not ready to communicate. */
+	BLE_MIDI_CONNECTED,
+	/* Connected and ready to communicate. */
+	BLE_MIDI_READY
+} ble_midi_ready_state_t ;
+
+/* Used to signal if the BLE MIDI service is ready. Only attempt to transmit data if state is BLE_MIDI_READY. */
+typedef void (*ble_midi_ready_cb_t)(ble_midi_ready_state_t state);
 /** Called when a BLE MIDI packet has just been sent. */
 typedef void (*ble_midi_tx_done_cb_t)();
 /** Called when a non-sysex message has been parsed */
@@ -23,7 +32,7 @@ typedef void (*ble_midi_sysex_end_cb_t)(uint16_t timestamp);
 
 /** Callbacks set to NULL are ignored. */
 struct ble_midi_callbacks {
-	ble_midi_available_cb_t available_cb;
+	ble_midi_ready_cb_t ready_cb;
 	ble_midi_tx_done_cb_t tx_done_cb;
 	ble_midi_message_cb_t midi_message_cb;
 	ble_midi_sysex_start_cb_t sysex_start_cb;
@@ -64,7 +73,6 @@ int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes);
 int ble_midi_tx_sysex_end();
 
 #ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL
-
 /**
  * Send buffered MIDI messages, if any.
  */

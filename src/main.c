@@ -13,14 +13,17 @@ K_MSGQ_DEFINE(button_event_q, sizeof(uint8_t), 128, 4);
 #define SYSEX_TX_MAX_CHUNK_SIZE 240
 
 struct sample_app_state_t {
-	int ble_midi_is_available;
+	int is_connected;
+	int ble_midi_is_ready;
 	int sysex_rx_data_byte_count;
 	int sysex_tx_data_byte_count;
 	int sysex_tx_in_progress;
 	int button_states[4];
 };
 
-static struct sample_app_state_t sample_app_state = {.ble_midi_is_available = 0,
+static struct sample_app_state_t sample_app_state = {
+							 .is_connected = 0,
+							 .ble_midi_is_ready = 0,
 						     .sysex_tx_data_byte_count = 0,
 						     .sysex_tx_in_progress = 0,
 						     .sysex_rx_data_byte_count = 0,
@@ -28,17 +31,20 @@ static struct sample_app_state_t sample_app_state = {.ble_midi_is_available = 0,
 
 /************************ LEDs ************************/
 
-#define LED_COUNT	 3
-/* Turn on LED 0 when BLE MIDI is available */
-#define LED_AVAILABLE	 0
-/* Toggle LED 1 on received sysex messages */
-#define LED_RX_SYSEX	 1
-/* Toggle LED 2 when receiving non-sysex messages */
-#define LED_RX_NON_SYSEX 2
+#define LED_COUNT	     4
+/* Turn on this LED when the BLE MIDI is perihperal is connected */
+#define LED_CONNECTED	 0
+/* Turn on this LED when the BLE MIDI service is ready. */
+#define LED_READY	     1
+/* Toggle this LED when receiving sysex messages */
+#define LED_RX_SYSEX	 2
+/* Toggle this LED when receiving non-sysex messages */
+#define LED_RX_NON_SYSEX 3
 
 static const struct gpio_dt_spec leds[LED_COUNT] = {GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
 						    GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios),
-						    GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios)};
+						    GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios),
+							GPIO_DT_SPEC_GET(DT_ALIAS(led3), gpios)};
 
 static void init_leds()
 {
@@ -109,14 +115,21 @@ static void init_buttons()
 }
 
 /****************** BLE MIDI callbacks ******************/
-static void ble_midi_available_cb(int is_available)
+static void ble_midi_ready_cb(ble_midi_ready_state_t state)
 {
-	gpio_pin_set_dt(&leds[LED_AVAILABLE], is_available);
-	if (!is_available) {
+	int is_connected = state != BLE_MIDI_NOT_CONNECTED;
+	int is_ready = state == BLE_MIDI_READY;
+	
+	gpio_pin_set_dt(&leds[LED_CONNECTED], is_connected);
+	gpio_pin_set_dt(&leds[LED_READY], is_ready);
+
+	if (!is_ready) {
 		gpio_pin_set_dt(&leds[LED_RX_NON_SYSEX], 0);
 		gpio_pin_set_dt(&leds[LED_RX_SYSEX], 0);
 	}
-	sample_app_state.ble_midi_is_available = is_available;
+
+	sample_app_state.is_connected = is_connected;
+	sample_app_state.ble_midi_is_ready = is_ready;
 }
 
 static void tx_done_cb()
@@ -190,7 +203,7 @@ int main(void)
 	__ASSERT(err == 0, "bt_enable failed");
 
 	/* Must be called after bt_enable */
-	struct ble_midi_callbacks midi_callbacks = {.available_cb = ble_midi_available_cb,
+	struct ble_midi_callbacks midi_callbacks = {.ready_cb = ble_midi_ready_cb,
 						    .tx_done_cb = tx_done_cb,
 						    .midi_message_cb = ble_midi_message_cb,
 						    .sysex_start_cb = ble_midi_sysex_start_cb,

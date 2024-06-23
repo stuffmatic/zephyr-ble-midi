@@ -14,8 +14,7 @@ LOG_MODULE_REGISTER(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
 #ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 #include <zephyr/init.h>
 #include <zephyr/sys/ring_buffer.h>
-
-#endif /* CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT */
+#endif /* !CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG */
 
 static uint16_t timestamp_ms()
 {
@@ -26,10 +25,10 @@ struct ble_midi_context context;
 
 int send_packet(uint8_t *bytes, int num_bytes);
 
-void on_service_availability_changed(int available) {
-	LOG_INF("service available: %d", available);
-	if (context.user_callbacks.available_cb) {
-		context.user_callbacks.available_cb(available);
+void on_ready_state_changed(ble_midi_ready_state_t state) {
+	LOG_INF("ready state: %d", state);
+	if (context.user_callbacks.ready_cb) {
+		context.user_callbacks.ready_cb(state);
 	}
 }
 
@@ -58,15 +57,13 @@ static ssize_t midi_write_cb(struct bt_conn *conn, const struct bt_gatt_attr *at
 }
 
 static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
-{
+{	
 	int notification_enabled = value == BT_GATT_CCC_NOTIFY;
 	LOG_INF("I/O characteristic notification enabled: %d", notification_enabled);
 
-	/* MIDI I/O characteristic notification has been turned on.
-			Notify the user that BLE MIDI is available. */
-	if (notification_enabled) {
-		on_service_availability_changed(notification_enabled);
-	}
+	/* MIDI I/O characteristic notification has been turned on/off.
+	   Notify the user that BLE MIDI is ready/not ready. */
+	on_ready_state_changed(notification_enabled ? BLE_MIDI_READY : BLE_MIDI_CONNECTED);
 }
 
 #define BT_UUID_MIDI_SERVICE BT_UUID_DECLARE_128(BLE_MIDI_SERVICE_UUID)
@@ -190,6 +187,8 @@ static struct bt_gatt_cb gatt_callbacks = {.att_mtu_updated =
 
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
+	on_ready_state_changed(BLE_MIDI_CONNECTED);
+
 	int tx_running_status = 0;
 	#ifdef CONFIG_BLE_MIDI_SEND_RUNNING_STATUS
 	tx_running_status = 1;
@@ -203,6 +202,10 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 	LOG_INF("tx_running_status %d, tx_note_off_as_note_on %d", tx_running_status,
 		tx_note_off_as_note_on);
 
+#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
+	conn_event_trigger_set_enabled(conn, 1);
+#endif
+
 	/* Request smallest possible connection interval, if not already set.
 	   NOTE: The actual update request is sent after 5 seconds as required
 		 by the Bluetooth Core specification spec. See BT_CONN_PARAM_UPDATE_TIMEOUT. */
@@ -213,19 +216,13 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		LOG_INF("Got conn. interval %d ms, requesting interval %d ms with error %d",
 			BT_CONN_INTERVAL_TO_MS(info.le.interval), BT_CONN_INTERVAL_TO_MS(INTERVAL_MIN), e);
 	}
-#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
-	conn_event_trigger_set_enabled(conn, 1);
-#endif
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	LOG_INF("Device disconnected, reason %d", reason);
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
-	on_service_availability_changed(0);
-#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
-	conn_event_trigger_set_enabled(conn, 0);
-#endif
+	on_ready_state_changed(BLE_MIDI_NOT_CONNECTED);
 }
 
 static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t latency,
@@ -251,14 +248,14 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks)
 	ble_midi_context_init(&context);
 
 	bt_gatt_cb_register(&gatt_callbacks);
-	context.user_callbacks.available_cb = callbacks->available_cb;
+	context.user_callbacks.ready_cb = callbacks->ready_cb;
 	context.user_callbacks.tx_done_cb = callbacks->tx_done_cb;
 	context.user_callbacks.midi_message_cb = callbacks->midi_message_cb;
 	context.user_callbacks.sysex_start_cb = callbacks->sysex_start_cb;
 	context.user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 	context.user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
 #if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
-	conn_event_trigger_init(radio_notif_handler);
+	conn_event_trigger_init(radio_notif_handler); // TODO: return error
 #endif
 	LOG_INF("Initialized BLE MIDI");
 }
@@ -275,7 +272,7 @@ int ble_midi_tx_msg(uint8_t *bytes)
 	ring_buf_put(&msg_ringbuf, bytes, 3);
 	/* ... and submit a work item for adding the message to the next outgoing packet. */
 	atomic_inc(&context.pending_midi_msg_work_count);
-	int submit_result = k_work_submit(&midi_msg_work);
+	int submit_result = k_work_submit(&midi_msg_work); // TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
 #endif
 }
 
@@ -316,6 +313,7 @@ int ble_midi_tx_sysex_end()
  */
 void ble_midi_tx_buffered_msgs()
 {
+	/* Manually invoke radio notification handler */
 	radio_notif_handler();
 }
 #endif
