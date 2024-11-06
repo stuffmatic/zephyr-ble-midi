@@ -39,10 +39,10 @@ config BLE_MIDI_TX_MODE_CONN_EVENT
     # SoftDevice seems to use TIMER0, so don't use that.
     # see https://devzone.nordicsemi.com/f/nordic-q-a/38502/nrfx-timer-issue
     select NRFX_TIMER1
-    # BT_CENTRAL seems to be needed for CONFIG_BT_CTLR_SDC_EVENT_TRIGGER to work.
-    # Unfortunately, it also seems to add 60kbytes to the image size in an optimized build.
-    # TODO: see if this can be improved.
-    select BT_CENTRAL
+    # CONFIG_BT_LL_SOFTDEVICE_MULTIROLE is needed for CONFIG_BT_CTLR_SDC_EVENT_TRIGGER to work.
+    # Unfortunately, it also adds 60kbytes to the image size in an optimized build.
+    # See https://devzone.nordicsemi.com/f/nordic-q-a/112166/does-the-event-trigger-api-always-require-config_bt_central-significantly-increases-peripheral-image-size
+    select CONFIG_BT_LL_SOFTDEVICE_MULTIROLE
 
 config BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
     bool "Outgoing MIDI messages are buffered and sent just before the next connection event. Relies on the MPSL radio notifications API that was removed in nRF Connect SDK v2.6.0 or newer."
