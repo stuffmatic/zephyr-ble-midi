@@ -157,7 +157,7 @@ void ble_midi_writer_reset(struct ble_midi_writer_t *writer)
 	writer->prev_status_byte = 0;
 }
 
-enum ble_midi_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *writer,
+enum ble_midi_packet_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *writer,
 					      uint8_t *message_bytes, uint16_t timestamp)
 {
 	/* First, handle special case of a system real time message in a sysex message */
@@ -166,13 +166,13 @@ enum ble_midi_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *writer,
 			if (writer->tx_buf_max_size - writer->tx_buf_size >= 2) {
 				writer->tx_buf[writer->tx_buf_size++] = timestamp_byte(timestamp);
 				writer->tx_buf[writer->tx_buf_size++] = message_bytes[0];
-				return BLE_MIDI_SUCCESS;
+				return BLE_MIDI_PACKET_SUCCESS;
 			} else {
-				return BLE_MIDI_ERROR_PACKET_FULL;
+				return BLE_MIDI_PACKET_ERROR_PACKET_FULL;
 			}
 		} else {
 			/* Only real time messages allowed in sysex data */
-			return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+			return BLE_MIDI_PACKET_ERROR_INVALID_STATUS_BYTE;
 		}
 	}
 
@@ -186,13 +186,13 @@ enum ble_midi_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *writer,
 	uint8_t status_byte = message_bytes[0];
 	uint8_t num_message_bytes = message_size(status_byte);
 	if (num_message_bytes == 0) {
-		return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+		return BLE_MIDI_PACKET_ERROR_INVALID_STATUS_BYTE;
 	}
 
 	uint8_t data_bytes[2] = {message_bytes[1], message_bytes[2]};
 
 	if (!is_data_byte(data_bytes[0]) || !is_data_byte(data_bytes[1])) {
-		return BLE_MIDI_ERROR_INVALID_DATA_BYTE;
+		return BLE_MIDI_PACKET_ERROR_INVALID_DATA_BYTE;
 	}
 
 	/* Use running status? */
@@ -271,27 +271,27 @@ enum ble_midi_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *writer,
 		writer->prev_running_status_byte = prev_running_status_byte;
 		writer->prev_timestamp = timestamp;
 
-		return BLE_MIDI_SUCCESS;
+		return BLE_MIDI_PACKET_SUCCESS;
 	} else {
-		return BLE_MIDI_ERROR_PACKET_FULL;
+		return BLE_MIDI_PACKET_ERROR_PACKET_FULL;
 	}
 }
 
-enum ble_midi_error_t ble_midi_writer_add_sysex_msg(struct ble_midi_writer_t *writer,
+enum ble_midi_packet_error_t ble_midi_writer_add_sysex_msg(struct ble_midi_writer_t *writer,
 						    uint8_t *bytes, uint32_t num_bytes,
 						    uint16_t timestamp)
 {
 	/* The sysex message should have zero or more data bytes
 	   between the start byte 0xf0 and end byte 0xf7. */
 	if (num_bytes < 2) {
-		return BLE_MIDI_ERROR_INVALID_MESSAGE;
+		return BLE_MIDI_PACKET_ERROR_INVALID_MESSAGE;
 	}
 	if (bytes[0] != 0xf0 || bytes[num_bytes - 1] != 0xf7) {
-		return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+		return BLE_MIDI_PACKET_ERROR_INVALID_STATUS_BYTE;
 	}
 	for (int i = 1; i < num_bytes - 1; i++) {
 		if (!is_data_byte(bytes[i])) {
-			return BLE_MIDI_ERROR_INVALID_DATA_BYTE;
+			return BLE_MIDI_PACKET_ERROR_INVALID_DATA_BYTE;
 		}
 	}
 
@@ -303,7 +303,7 @@ enum ble_midi_error_t ble_midi_writer_add_sysex_msg(struct ble_midi_writer_t *wr
 		num_bytes_to_append++; /* Empty packet. A packet header byte is needed. */
 	}
 	if (writer->tx_buf_max_size - writer->tx_buf_size < num_bytes_to_append) {
-		return BLE_MIDI_ERROR_PACKET_FULL;
+		return BLE_MIDI_PACKET_ERROR_PACKET_FULL;
 	}
 
 	/* Add packet header? */
@@ -323,10 +323,10 @@ enum ble_midi_error_t ble_midi_writer_add_sysex_msg(struct ble_midi_writer_t *wr
 	/* Cancel running status */
 	writer->prev_running_status_byte = 0;
 
-	return BLE_MIDI_SUCCESS;
+	return BLE_MIDI_PACKET_SUCCESS;
 }
 
-static enum ble_midi_error_t append_status_byte_with_timestamp(struct ble_midi_writer_t *writer,
+static enum ble_midi_packet_error_t append_status_byte_with_timestamp(struct ble_midi_writer_t *writer,
 							       uint16_t timestamp, uint8_t status)
 {
 	int num_bytes_to_append = 2;
@@ -336,7 +336,7 @@ static enum ble_midi_error_t append_status_byte_with_timestamp(struct ble_midi_w
 		num_bytes_to_append++;
 	}
 	if (writer->tx_buf_max_size - writer->tx_buf_size < num_bytes_to_append) {
-		return BLE_MIDI_ERROR_PACKET_FULL;
+		return BLE_MIDI_PACKET_ERROR_PACKET_FULL;
 	}
 
 	/* If we made it here, there's room in the packet for the sysex start message. */
@@ -347,31 +347,31 @@ static enum ble_midi_error_t append_status_byte_with_timestamp(struct ble_midi_w
 	writer->tx_buf[writer->tx_buf_size++] = timestamp_byte(timestamp);
 	writer->tx_buf[writer->tx_buf_size++] = status;
 
-	return BLE_MIDI_SUCCESS;
+	return BLE_MIDI_PACKET_SUCCESS;
 }
 
-enum ble_midi_error_t ble_midi_writer_start_sysex_msg(struct ble_midi_writer_t *writer,
+enum ble_midi_packet_error_t ble_midi_writer_start_sysex_msg(struct ble_midi_writer_t *writer,
 							     uint16_t timestamp)
 {
 	if (writer->in_sysex_msg) {
-		return BLE_MIDI_ERROR_ALREADY_IN_SYSEX_SEQUENCE;
+		return BLE_MIDI_PACKET_ERROR_ALREADY_IN_SYSEX_SEQUENCE;
 	}
-	enum ble_midi_error_t result = append_status_byte_with_timestamp(writer, timestamp, 0xf0);
-	if (result == BLE_MIDI_SUCCESS) {
+	enum ble_midi_packet_error_t result = append_status_byte_with_timestamp(writer, timestamp, 0xf0);
+	if (result == BLE_MIDI_PACKET_SUCCESS) {
 		writer->in_sysex_msg = 1;
 		writer->prev_running_status_byte = 0;
 	}
 	return result;
 }
 
-enum ble_midi_error_t ble_midi_writer_end_sysex_msg(struct ble_midi_writer_t *writer,
+enum ble_midi_packet_error_t ble_midi_writer_end_sysex_msg(struct ble_midi_writer_t *writer,
 						    uint16_t timestamp)
 {
 	if (!writer->in_sysex_msg) {
-		return BLE_MIDI_ERROR_NOT_IN_SYSEX_SEQUENCE;
+		return BLE_MIDI_PACKET_ERROR_NOT_IN_SYSEX_SEQUENCE;
 	}
-	enum ble_midi_error_t result = append_status_byte_with_timestamp(writer, timestamp, 0xf7);
-	if (result == BLE_MIDI_SUCCESS) {
+	enum ble_midi_packet_error_t result = append_status_byte_with_timestamp(writer, timestamp, 0xf7);
+	if (result == BLE_MIDI_PACKET_SUCCESS) {
 		writer->in_sysex_msg = 0;
 	}
 	return result;
@@ -381,20 +381,20 @@ int ble_midi_writer_add_sysex_data(struct ble_midi_writer_t *writer, uint8_t *da
 				   uint32_t num_data_bytes, uint16_t timestamp)
 {
 	if (!writer->in_sysex_msg) {
-		return BLE_MIDI_ERROR_NOT_IN_SYSEX_SEQUENCE;
+		return BLE_MIDI_PACKET_ERROR_NOT_IN_SYSEX_SEQUENCE;
 	}
 
 	/* Validate data bytes */
 	for (int i = 0; i < num_data_bytes; i++) {
 		if (!is_data_byte(data_bytes[i])) {
-			return BLE_MIDI_ERROR_INVALID_DATA_BYTE;
+			return BLE_MIDI_PACKET_ERROR_INVALID_DATA_BYTE;
 		}
 	}
 
 	/* Add packet header? */
 	if (writer->tx_buf_size == 0) {
 		if (writer->tx_buf_max_size < 1) {
-			return BLE_MIDI_ERROR_PACKET_FULL;
+			return BLE_MIDI_PACKET_ERROR_PACKET_FULL;
 		}
 		writer->tx_buf[writer->tx_buf_size++] = header_byte(timestamp);
 	}
@@ -420,7 +420,7 @@ struct ble_midi_parser_t {
 	uint32_t rx_buf_size;
 };
 
-static enum ble_midi_error_t ble_midi_parser_read(struct ble_midi_parser_t *parser, uint8_t *result,
+static enum ble_midi_packet_error_t ble_midi_parser_read(struct ble_midi_parser_t *parser, uint8_t *result,
 						  uint32_t num_bytes)
 {
 	if (parser->read_pos <= parser->rx_buf_size - num_bytes) {
@@ -428,13 +428,13 @@ static enum ble_midi_error_t ble_midi_parser_read(struct ble_midi_parser_t *pars
 			result[i] = parser->rx_buf[parser->read_pos];
 			parser->read_pos++;
 		}
-		return BLE_MIDI_SUCCESS;
+		return BLE_MIDI_PACKET_SUCCESS;
 	} else {
-		return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+		return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 	}
 }
 
-static enum ble_midi_error_t is_sysex_continuation(struct ble_midi_parser_t *parser, int *is_sysex)
+static enum ble_midi_packet_error_t is_sysex_continuation(struct ble_midi_parser_t *parser, int *is_sysex)
 {
 	*is_sysex = 0;
 
@@ -444,39 +444,39 @@ static enum ble_midi_error_t is_sysex_continuation(struct ble_midi_parser_t *par
 	  - a data byte */
 	uint8_t header = 0;
 	if (ble_midi_parser_read(parser, &header, 1)) {
-		return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+		return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 	}
 
 	while (parser->read_pos < parser->rx_buf_size) {
 		uint8_t byte_1 = 0;
 		if (ble_midi_parser_read(parser, &byte_1, 1)) {
-			return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+			return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 		}
 		if (is_data_byte(byte_1)) {
 			*is_sysex = 1;
-			return BLE_MIDI_SUCCESS;
+			return BLE_MIDI_PACKET_SUCCESS;
 		}
 		uint8_t byte_2 = 0;
 		if (ble_midi_parser_read(parser, &byte_2, 1)) {
-			return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+			return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 		}
 
 		if (is_data_byte(byte_2)) {
-			return BLE_MIDI_ERROR_UNEXPECTED_DATA_BYTE;
+			return BLE_MIDI_PACKET_ERROR_UNEXPECTED_DATA_BYTE;
 		}
 		if (is_realtime_message(byte_2)) {
 			/* A system real time message. Keep going.  */
 		} else {
 			/* A status byte other than system real time.
 			Not a sysex continuation packet */
-			return BLE_MIDI_SUCCESS;
+			return BLE_MIDI_PACKET_SUCCESS;
 		}
 	}
 
-	return BLE_MIDI_SUCCESS;
+	return BLE_MIDI_PACKET_SUCCESS;
 }
 
-enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_size,
+enum ble_midi_packet_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_size,
 					    struct ble_midi_parse_cb_t *cb)
 {
 	/* A parser instance keeping track of the parsing state. */
@@ -490,7 +490,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 	/* First, check if this is a sysex continuation packet. */
 	int is_sysex_cont = 0;
 	int res = is_sysex_continuation(&parser, &is_sysex_cont);
-	if (res != BLE_MIDI_SUCCESS) {
+	if (res != BLE_MIDI_PACKET_SUCCESS) {
 		return res;
 	}
 	parser.in_sysex_msg = is_sysex_cont;
@@ -501,12 +501,12 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 	/* Start actual parsing by reading packet header */
 	uint8_t packet_header = 0;
 	if (ble_midi_parser_read(&parser, &packet_header, 1)) {
-		return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+		return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 	}
 	uint8_t timestamp_high_bits = 0x3f & packet_header;
 
 	if (!is_status_byte(packet_header)) {
-		return BLE_MIDI_ERROR_INVALID_HEADER_BYTE;
+		return BLE_MIDI_PACKET_ERROR_INVALID_HEADER_BYTE;
 	}
 
 	/* Parse messages */
@@ -516,7 +516,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 			 * messages */
 			uint8_t byte = 0;
 			if (ble_midi_parser_read(&parser, &byte, 1)) {
-				return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+				return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 			}
 
 			if (is_data_byte(byte)) {
@@ -528,7 +528,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 				  system real time status or sysex end */
 				uint8_t status = 0;
 				if (ble_midi_parser_read(&parser, &status, 1)) {
-					return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+					return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 				}
 				if (is_realtime_message(status)) {
 					if (cb->midi_message_cb) {
@@ -545,7 +545,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 					}
 				} else {
 					/* Invalid status byte. Bail. */
-					return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+					return BLE_MIDI_PACKET_ERROR_INVALID_STATUS_BYTE;
 				}
 			}
 		} else {
@@ -558,7 +558,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 			*/
 			uint8_t byte_0 = 0;
 			if (ble_midi_parser_read(&parser, &byte_0, 1)) {
-				return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+				return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 			}
 			if (is_data_byte(byte_0)) {
 				/* Case 1 - running status without timestamp byte.
@@ -569,7 +569,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 				uint8_t num_additional_data_bytes = num_message_bytes - 2;
 				if (ble_midi_parser_read(&parser, &message_bytes[2],
 							 num_additional_data_bytes)) {
-					return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+					return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 				}
 				if (cb->midi_message_cb) {
 					cb->midi_message_cb(
@@ -586,7 +586,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 				}
 				parser.prev_timestamp_byte = byte_0;
 				if (ble_midi_parser_read(&parser, &byte_1, 1)) {
-					return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+					return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 				}
 
 				if (is_data_byte(byte_1)) {
@@ -597,7 +597,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 					uint8_t num_additional_data_bytes = num_message_bytes - 2;
 					if (ble_midi_parser_read(&parser, &message_bytes[2],
 								 num_additional_data_bytes)) {
-						return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+						return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 					}
 					if (cb->midi_message_cb) {
 						cb->midi_message_cb(
@@ -632,7 +632,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 							if (ble_midi_parser_read(&parser,
 										 &message_bytes[1],
 										 num_data_bytes)) {
-								return BLE_MIDI_ERROR_UNEXPECTED_END_OF_DATA;
+								return BLE_MIDI_PACKET_ERROR_UNEXPECTED_END_OF_DATA;
 							}
 							if (cb->midi_message_cb) {
 								cb->midi_message_cb(
@@ -643,7 +643,7 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 										byte_0));
 							}
 						} else {
-							return BLE_MIDI_ERROR_INVALID_STATUS_BYTE;
+							return BLE_MIDI_PACKET_ERROR_INVALID_STATUS_BYTE;
 						}
 					}
 				}
@@ -651,5 +651,5 @@ enum ble_midi_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_buf_siz
 		}
 	}
 
-	return BLE_MIDI_SUCCESS;
+	return BLE_MIDI_PACKET_SUCCESS;
 }

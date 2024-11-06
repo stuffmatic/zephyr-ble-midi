@@ -96,7 +96,7 @@ void assert_error_code(int actual, int expected)
 
 void assert_success(int error_code)
 {
-	if (error_code != BLE_MIDI_SUCCESS) {
+	if (error_code != BLE_MIDI_PACKET_SUCCESS) {
 		printf("❌ expected success error code, got %d\n", error_code);
 		num_failed_assertions++;
 	}
@@ -243,7 +243,7 @@ static void test_parse_invalid_header_byte() {
 		0x8a, 0x90, 0x69, 0x7f, // note on w timestamp
 	};
 	num_parsed_messages = 0;
-	assert_error_code(ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb), BLE_MIDI_ERROR_INVALID_HEADER_BYTE);
+	assert_error_code(ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb), BLE_MIDI_PACKET_ERROR_INVALID_HEADER_BYTE);
 }
 
 void test_running_status_with_one_rt()
@@ -360,8 +360,8 @@ void test_full_packet()
 	for (int i = 0; i < num_messages; i++) {
 		int result =
 			ble_midi_writer_add_msg(&writer, messages[i].bytes, messages[i].timestamp);
-		assert_error_code(result, i < num_messages - 1 ? BLE_MIDI_SUCCESS
-							       : BLE_MIDI_ERROR_PACKET_FULL);
+		assert_error_code(result, i < num_messages - 1 ? BLE_MIDI_PACKET_SUCCESS
+							       : BLE_MIDI_PACKET_ERROR_PACKET_FULL);
 	}
 
 	assert_payload_equals(&writer, expected_payload, sizeof(expected_payload));
@@ -458,7 +458,7 @@ void test_packet_end_cancels_running_status()
 	assert_success(ble_midi_writer_add_msg(&writer, note_on, 100));
 	assert_success(ble_midi_writer_add_msg(&writer, note_off, 100));
 	assert_error_code(ble_midi_writer_add_msg(&writer, note_on, 100),
-			  BLE_MIDI_ERROR_PACKET_FULL);
+			  BLE_MIDI_PACKET_ERROR_PACKET_FULL);
 
 	uint8_t expected_payload_1[] = {0x80, 0xe4, 0x90, 0x69, 0x7f, 0x69, 0x00};
 	assert_payload_equals(&writer, expected_payload_1, sizeof(expected_payload_1));
@@ -558,7 +558,7 @@ static void test_parse_invalid_status_in_sysex_message()
 		0xf0, SYSEX_END,  // sysex start
 	};
 	num_parsed_messages = 0;
-	assert_error_code(ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb), BLE_MIDI_ERROR_INVALID_STATUS_BYTE);
+	assert_error_code(ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb), BLE_MIDI_PACKET_ERROR_INVALID_STATUS_BYTE);
 }
 
 int main(int argc, char *argv[])

@@ -50,8 +50,8 @@ static ssize_t midi_write_cb(struct bt_conn *conn, const struct bt_gatt_attr *at
 					       .sysex_data_cb = context.user_callbacks.sysex_data_cb,
 					       .sysex_end_cb = context.user_callbacks.sysex_end_cb};
 	/* log_buffer("MIDI rx:", &((uint8_t *)buf)[offset], len); */
-	enum ble_midi_error_t rc = ble_midi_parse_packet(&((uint8_t *)buf)[offset], len, &parse_cb);
-	if (rc != BLE_MIDI_SUCCESS) {
+	enum ble_midi_packet_error_t rc = ble_midi_parse_packet(&((uint8_t *)buf)[offset], len, &parse_cb);
+	if (rc != BLE_MIDI_PACKET_SUCCESS) {
 		LOG_ERR("ble_midi_parse_packet returned error %d", rc);
 	}
 }
