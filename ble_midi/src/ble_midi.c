@@ -239,10 +239,10 @@ BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {.connected = on_connected,
 					      .disconnected = on_disconnected,
 					      .le_param_updated = le_param_updated};
 
-void ble_midi_init(struct ble_midi_callbacks *callbacks)
+enum ble_midi_error_t ble_midi_init(struct ble_midi_callbacks *callbacks)
 {
 	if (context.is_initialized) {
-		return;
+		return BLE_MIDI_ALREADY_INITIALIZED;
 	}
 
 	ble_midi_context_init(&context);
@@ -258,9 +258,11 @@ void ble_midi_init(struct ble_midi_callbacks *callbacks)
 	conn_event_trigger_init(radio_notif_handler); // TODO: return error
 #endif
 	LOG_INF("Initialized BLE MIDI");
+
+	return BLE_MIDI_SUCCESS;
 }
 
-int ble_midi_tx_msg(uint8_t *bytes)
+enum ble_midi_error_t ble_midi_tx_msg(uint8_t *bytes)
 {
 #ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 	/* Send a single message packet. */
@@ -274,16 +276,18 @@ int ble_midi_tx_msg(uint8_t *bytes)
 	atomic_inc(&context.pending_midi_msg_work_count);
 	int submit_result = k_work_submit(&midi_msg_work); // TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
 #endif
+	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
-int ble_midi_tx_sysex_start()
+enum ble_midi_error_t ble_midi_tx_sysex_start()
 {
 	ble_midi_writer_reset(&context.sysex_tx_writer);
 	ble_midi_writer_start_sysex_msg(&context.sysex_tx_writer, timestamp_ms());
-	return send_packet(context.sysex_tx_writer.tx_buf, context.sysex_tx_writer.tx_buf_size);
+	int send_result = send_packet(context.sysex_tx_writer.tx_buf, context.sysex_tx_writer.tx_buf_size);
+	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
-int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
+enum ble_midi_error_t ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
 {
 	ble_midi_writer_reset(&context.sysex_tx_writer);
 	int add_result =
@@ -297,14 +301,15 @@ int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
 	if (send_rc == 0) {
 		return add_result; /* Return number of sent bytes on success */
 	}
-	return send_rc;
+	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
-int ble_midi_tx_sysex_end()
+enum ble_midi_error_t ble_midi_tx_sysex_end()
 {
 	ble_midi_writer_reset(&context.sysex_tx_writer);
 	ble_midi_writer_end_sysex_msg(&context.sysex_tx_writer, timestamp_ms());
-	return send_packet(context.sysex_tx_writer.tx_buf, context.sysex_tx_writer.tx_buf_size);
+	int send_result = send_packet(context.sysex_tx_writer.tx_buf, context.sysex_tx_writer.tx_buf_size);
+	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
 #ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL

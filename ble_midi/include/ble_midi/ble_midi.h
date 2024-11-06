@@ -8,6 +8,12 @@
 /** UUID of the MIDI data I/O characteristic */
 #define BLE_MIDI_CHAR_UUID    BT_UUID_128_ENCODE(0x7772E5DB, 0x3868, 0x4112, 0xA1A9, 0xF2669D106BF3)
 
+enum ble_midi_error_t {
+	BLE_MIDI_SUCCESS = 0,
+	BLE_MIDI_ALREADY_INITIALIZED,
+	
+};
+
 typedef enum  {
 	/* Not connected */
 	BLE_MIDI_NOT_CONNECTED = 0,
@@ -43,20 +49,20 @@ struct ble_midi_callbacks {
 /**
  * Initializes the BLE MIDI service. This should only be called once.
  */
-void ble_midi_init(struct ble_midi_callbacks *callbacks);
+enum ble_midi_error_t ble_midi_init(struct ble_midi_callbacks *callbacks);
 
 /**
  * Sends a non-sysex MIDI message.
  * @param bytes A zero padded buffer of length 3 containing the message bytes to send.
  * @return 0 on success or a non-zero number on failure.
  */
-int ble_midi_tx_msg(uint8_t *bytes);
+enum ble_midi_error_t ble_midi_tx_msg(uint8_t *bytes);
 
 /**
  * Start transmission of a sysex message.
  * @return 0 on success or a non-zero number on failure.
  */
-int ble_midi_tx_sysex_start();
+enum ble_midi_error_t ble_midi_tx_sysex_start();
 
 /**
  * Transmit sysex data bytes.
@@ -64,13 +70,13 @@ int ble_midi_tx_sysex_start();
  * @param num_bytes The number of data bytes to send.
  * @return On success, the number of bytes written. A negative number on error.
  */
-int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes);
+enum ble_midi_error_t ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes);
 
 /**
  * End transmission of a sysex message.
  * @return 0 on success or a non-zero number on failure.
  */
-int ble_midi_tx_sysex_end();
+enum ble_midi_error_t ble_midi_tx_sysex_end();
 
 #ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL
 /**
