@@ -249,7 +249,7 @@ int main(void)
 				ble_midi_tx_sysex_start();
 			} else if (button_idx == BUTTON_MANUAL_TX_FLUSH) {
 				#ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL
-				ble_midi_tx_buffered_msgs();
+				ble_midi_tx_flush();
 				#endif
 			}
 		}

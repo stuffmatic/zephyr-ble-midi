@@ -76,7 +76,7 @@ int ble_midi_tx_sysex_end();
 /**
  * Send buffered MIDI messages, if any.
  */
-void ble_midi_tx_buffered_msgs();
+void ble_midi_tx_flush();
 #endif
 
 #endif

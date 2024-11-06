@@ -311,7 +311,7 @@ int ble_midi_tx_sysex_end()
 /**
  * 
  */
-void ble_midi_tx_buffered_msgs()
+void ble_midi_tx_flush()
 {
 	/* Manually invoke radio notification handler */
 	radio_notif_handler();
