@@ -31,10 +31,11 @@
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
-                "${workspaceFolder}/test/ble_midi_packet_test.c",
                 "${workspaceFolder}/ble_midi/src/ble_midi_packet.c",
-                "-o",
+                "${workspaceFolder}/ble_midi/src/tx_queue.c",
                 "${workspaceFolder}/test/tx_queue_test.c",
+                "-o",
+                "${workspaceFolder}/test/tx_queue_test",
             ],
             "options": {
                 "cwd": "${fileDirname}"

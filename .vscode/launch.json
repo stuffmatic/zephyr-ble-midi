@@ -12,7 +12,7 @@
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb",
-            "preLaunchTask": "Build unit tests"
+            "preLaunchTask": "Build packet unit tests"
         },
         {
             "name": "TX queue unit tests",
@@ -25,7 +25,7 @@
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb",
-            "preLaunchTask": "Build unit tests"
+            "preLaunchTask": "Build tx queue unit tests"
         },
         {
             "name": "zephyr NRF52",

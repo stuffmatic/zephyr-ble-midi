@@ -36,6 +36,7 @@ int fifo_clear()
 {
     fifo.read_pos = 0;
     fifo.write_post = 0;
+    return 0;
 }
 
 int fifo_write(const uint8_t *bytes, int num_bytes)
@@ -51,7 +52,16 @@ uint16_t ble_timestamp()
 int main(int argc, char *argv[])
 {
 	struct tx_queue queue;
-	tx_queue_init(&queue, NULL);
+    struct tx_queue_callbacks callbacks = {
+        .fifo_peek = fifo_peek,
+	    .fifo_read = fifo_read,
+	    .fifo_get_free_space = fifo_get_free_space,
+	    .fifo_is_empty = fifo_is_empty,
+	    .fifo_clear = fifo_clear,
+	    .fifo_write = fifo_write,
+	    .ble_timestamp = ble_timestamp
+    };
+	tx_queue_init(&queue, &callbacks);
 
-    tx_queue_write_sysex_start(&queue);
+    tx_queue_push_sysex_start(&queue);
 }

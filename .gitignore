@@ -8,3 +8,5 @@ build*
 *.dSYM
 ble_midi_packet_test
 !ble_midi_packet_test.c
+tx_queue_test
+!tx_queue_test.c
