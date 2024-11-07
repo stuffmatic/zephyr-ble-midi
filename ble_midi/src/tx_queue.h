@@ -34,10 +34,11 @@ struct tx_queue {
 };
 
 // INIT / CLEAR API. 
-void tx_queue_init(struct tx_queue* queue, struct tx_queue_callbacks* callbacks);
+void tx_queue_init(struct tx_queue* queue, struct tx_queue_callbacks* callbacks, int running_status_enabled, int note_off_as_note_on);
 void tx_queue_reset(struct tx_queue* queue);
 
 // Producer API
+enum tx_queue_error tx_queue_set_max_tx_packet_size(struct tx_queue* queue, uint16_t size);
 enum tx_queue_error tx_queue_push_msg(struct tx_queue* queue, const uint8_t* bytes);
 enum tx_queue_error tx_queue_push_sysex_start(struct tx_queue* queue);
 enum tx_queue_error tx_queue_push_sysex_end(struct tx_queue* queue);
@@ -67,6 +68,7 @@ int tx_queue_push_tx_packet(struct tx_queue* queue);
 int tx_queue_pop_tx_packet(struct tx_queue* queue);
 
 struct ble_midi_writer_t* tx_queue_first_tx_packet(struct tx_queue* queue);
+
 struct ble_midi_writer_t* tx_queue_last_tx_packet(struct tx_queue* queue);
 
 #endif // BLE_MIDI_TX_QUEUE_H
