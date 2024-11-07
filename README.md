@@ -14,7 +14,7 @@ The public API is defined in [ble_midi.h](ble_midi/include/ble_midi/ble_midi.h).
 
 ## Sample app
 
-The [sample app](src/main.c) shows how to send and receive MIDI data. The app requires a board with at least four buttons and three LEDs, for example [nrf52840dk_nrf52840](https://docs.zephyrproject.org/latest/boards/arm/nrf52840dk_nrf52840/doc/index.html).
+The [sample app](src/main.c) shows how to send and receive MIDI data. The app requires a board with at least four buttons and four LEDs, for example [nrf52840dk_nrf52840](https://docs.zephyrproject.org/latest/boards/arm/nrf52840dk_nrf52840/doc/index.html).
 
 * __Button 1__ - Send three simultaneous note on/off messages
 * __Button 2__ - Send a short sysex message
