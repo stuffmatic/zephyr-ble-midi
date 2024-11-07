@@ -2,10 +2,23 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Unit tests",
+            "name": "Packet unit tests",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/test/ble_midi_packet_test",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/test",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build unit tests"
+        },
+        {
+            "name": "TX queue unit tests",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/test/tx_queue_test",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/test",

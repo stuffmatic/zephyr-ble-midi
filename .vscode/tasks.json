@@ -2,7 +2,7 @@
     "tasks": [
         {
             "type": "cppbuild",
-            "label": "Build unit tests",
+            "label": "Build packet unit tests",
             "command": "gcc",
             "args": [
                 "-fdiagnostics-color=always",
@@ -11,6 +11,30 @@
                 "${workspaceFolder}/ble_midi/src/ble_midi_packet.c",
                 "-o",
                 "${workspaceFolder}/test/ble_midi_packet_test",
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": ""
+        },
+        {
+            "type": "cppbuild",
+            "label": "Build tx queue unit tests",
+            "command": "gcc",
+            "args": [
+                "-fdiagnostics-color=always",
+                "-g",
+                "${workspaceFolder}/test/ble_midi_packet_test.c",
+                "${workspaceFolder}/ble_midi/src/ble_midi_packet.c",
+                "-o",
+                "${workspaceFolder}/test/tx_queue_test.c",
             ],
             "options": {
                 "cwd": "${fileDirname}"
