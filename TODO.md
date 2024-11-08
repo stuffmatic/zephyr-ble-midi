@@ -11,3 +11,7 @@
 
 * can't select bt_central in module conf
 * remove device from macos audio midi setup made it possible to connect again 🤷‍♂️
+
+# new event trigger
+
+*  <err> ble_midi: nrfx_timer_init result 195887116 ASSERTION FAIL [init_result == NRFX_SUCCESS] @ CMAKE_SOURCE_DIR/ble_midi/src/conn_event_trigger.c:50

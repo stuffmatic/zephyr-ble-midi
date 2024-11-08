@@ -113,6 +113,11 @@ int fifo_write(const uint8_t *bytes, int num_bytes)
     return ring_buf_put(&tx_queue_fifo, bytes, num_bytes);
 }
 
+void notify_has_data(int has_data)
+{
+    has_data ? atomic_set_bit(&has_tx_data, 0) : atomic_clear_bit(&has_tx_data, 0);
+}
+
 static struct tx_queue_callbacks tx_queue_callbacks = {
     .fifo_peek = fifo_peek,
     .fifo_read = fifo_read,
@@ -120,7 +125,8 @@ static struct tx_queue_callbacks tx_queue_callbacks = {
     .fifo_is_empty = fifo_is_empty,
     .fifo_clear = fifo_clear,
     .fifo_write = fifo_write,
-    .ble_timestamp = timestamp_ms
+    .ble_timestamp = timestamp_ms,
+	.notify_has_data = notify_has_data
 };
 
 /* A work item handler for sending the contents of pending tx packets */
@@ -130,16 +136,10 @@ static void tx_pending_packets_work_cb(struct k_work *w)
 	// stopping if the BLE stack buffer queue is full.
 	struct ble_midi_writer_t* packet = tx_queue_first_tx_packet(&context.tx_queue);
 	while (packet) {
-		if (packet->tx_buf_size == 0) {
-			// TODO: handle in a better way
-			break;
-		}
 		int send_result = send_packet(packet->tx_buf, packet->tx_buf_size);
 		if (send_result == 0) {
-			// Packet sent, remove it from the queue.
 			tx_queue_pop_tx_packet(&context.tx_queue);
-			break; // TODO: remove this
-		}
+		} 
 		else if (send_result == -ENOMEM) {
 			// BLE stack buffer queue is full. Retry this packet later
 			break;
@@ -156,7 +156,7 @@ K_WORK_DEFINE(tx_pending_packets_work, tx_pending_packets_work_cb);
 static void radio_notif_handler(void)
 {
 	/* If there is data to send, submit a work item to send it. */
-	if (1 || atomic_test_bit(&has_tx_data, 0)) { // TODO: actually check if there is data
+	if (atomic_test_bit(&has_tx_data, 0)) {
 		k_work_submit(&tx_pending_packets_work);
 	}
 }
@@ -168,17 +168,6 @@ static void tx_queue_fifo_work_cb(struct k_work *w)
 {
 	tx_queue_pop_pending(&context.tx_queue);
 
-	/*
-	// Get the MIDI bytes to send.
-	uint8_t msg[3];
-	ring_buf_get(&msg_ringbuf, msg, 3);
-	// Write the MIDI bytes to the tx packet
-	uint16_t timestamp = timestamp_ms();
-	ble_midi_writer_add_msg(&context.tx_writer, msg, timestamp);
-	// Signal that there is data to send at the next connection event
-	atomic_set_bit(&has_tx_data, 0);
-	*/
-	
 	// k_sleep(K_MSEC(10)); // simulate long running work item. for testing re-submission logic.
 
 	int unfinished_work_count = atomic_get(&context.pending_tx_queue_fifo_work_count);

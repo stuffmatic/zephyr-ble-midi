@@ -45,11 +45,11 @@ void timer_init() {
 	timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_32;
 	
     int init_result = nrfx_timer_init(&timer, &timer_cfg, timer_handler);
-    if (init_result != NRFX_SUCCESS) {
+    if (init_result != NRFX_SUCCESS && init_result != NRFX_ERROR_ALREADY) {
         LOG_ERR("nrfx_timer_init result %d", init_result);
 	    __ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
     }
-
+	
     IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_1_irq_handler, 0);
 	irq_enable(NRFX_TIMER_IRQ);
 }

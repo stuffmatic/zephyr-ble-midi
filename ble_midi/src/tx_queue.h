@@ -22,6 +22,7 @@ struct tx_queue_callbacks {
 	int (*fifo_is_empty)();
 	int (*fifo_clear)();
 	int (*fifo_write)(const uint8_t* bytes, int num_bytes);
+	int (*notify_has_data)(int has_data);
 	uint16_t (*ble_timestamp)();
 };
 

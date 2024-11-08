@@ -26,6 +26,13 @@
 
 static uint8_t sysex_chunk_scratch_buf[SYSEX_DATA_CHUNK_MAX_SIZE];
 
+static void set_has_tx_data(struct tx_queue* queue, int has_data) {
+	queue->has_tx_data = has_data;
+	if (queue->callbacks.notify_has_data) {
+		queue->callbacks.notify_has_data(has_data);
+	}
+}
+
 static enum tx_queue_error write_3_byte_chunk(struct tx_queue* queue, const uint8_t* bytes) {
 	if (queue->callbacks.fifo_get_free_space() < 3) {
 		return TX_QUEUE_FIFO_FULL;
@@ -46,6 +53,10 @@ static int add_3_byte_chunk_to_packet(struct tx_queue* queue, uint8_t* bytes) {
 	// 2. add to the next tx packet if there is one
 	for (int attempt = 0; attempt < 2; attempt++) {
 		struct ble_midi_writer_t* tx_packet = tx_queue_last_tx_packet(queue);
+		if (!tx_packet) {
+			// no packets left
+			return 1;
+		}
 		if (first_byte == SYSEX_START) {
 			add_result = ble_midi_writer_start_sysex_msg(tx_packet, timestamp);
 		} else if (first_byte == SYSEX_END) {
@@ -68,7 +79,7 @@ static int add_3_byte_chunk_to_packet(struct tx_queue* queue, uint8_t* bytes) {
 
 	if (add_result == BLE_MIDI_PACKET_SUCCESS) {
 		// chunk was added, we're done.
-		queue->has_tx_data = 1;
+		set_has_tx_data(queue, 1);
 		return 0;
 	} else if (add_result == BLE_MIDI_PACKET_ERROR_PACKET_FULL) {
         return 1;
@@ -92,7 +103,8 @@ void tx_queue_reset(struct tx_queue* queue) {
 		// TODO: handle better
 		queue->callbacks.fifo_clear();
 	}
-	queue->has_tx_data = 0;
+
+	set_has_tx_data(queue, 0);
     
     for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
         ble_midi_writer_reset(&queue->tx_packets[i]);
@@ -108,6 +120,7 @@ void tx_queue_set_callbacks(struct tx_queue* queue, struct tx_queue_callbacks* c
 		queue->callbacks.fifo_read = callbacks->fifo_read;
 		queue->callbacks.fifo_write = callbacks->fifo_write;
 		queue->callbacks.fifo_clear = callbacks->fifo_clear;
+		queue->callbacks.notify_has_data = callbacks->notify_has_data;
 	}
 }
 
@@ -235,30 +248,28 @@ int tx_queue_push_tx_packet(struct tx_queue* queue) {
 
 int tx_queue_pop_tx_packet(struct tx_queue* queue) {
 	struct ble_midi_writer_t* packet_to_pop = tx_queue_first_tx_packet(queue);
-	ble_midi_writer_reset(packet_to_pop);
+	if (packet_to_pop) {
+		ble_midi_writer_reset(packet_to_pop);
 
-    if (queue->tx_packet_count <= 1) {
-		queue->has_tx_data = 0;
-        return 1;
-    }
+		if (queue->tx_packet_count <= 1) {
+			set_has_tx_data(queue, 0);
+			return 1;
+		}
 
-    queue->tx_packet_count--;
-    queue->first_tx_packet_idx = (queue->first_tx_packet_idx + 1) % BLE_MIDI_TX_QUEUE_PACKET_COUNT;
-	
-    return 0;
+		queue->tx_packet_count--;
+		queue->first_tx_packet_idx = (queue->first_tx_packet_idx + 1) % BLE_MIDI_TX_QUEUE_PACKET_COUNT;
+		
+		return 0;
+	}
 }
 
 struct ble_midi_writer_t* tx_queue_last_tx_packet(struct tx_queue* queue) {
-    if (queue->tx_packet_count == 0) {
-        return 0;
-    }
-
     int tx_packet_idx = (queue->first_tx_packet_idx + queue->tx_packet_count - 1) % BLE_MIDI_TX_QUEUE_PACKET_COUNT;
     return &queue->tx_packets[tx_packet_idx];
 }
 
 struct ble_midi_writer_t* tx_queue_first_tx_packet(struct tx_queue* queue) {
-    if (queue->tx_packet_count == 0) {
+    if (!queue->has_tx_data) {
         return 0;
     }
     int tx_packet_idx = queue->first_tx_packet_idx;

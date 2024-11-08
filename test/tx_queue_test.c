@@ -58,13 +58,15 @@ int fifo_write(const uint8_t *bytes, int num_bytes)
     return num_bytes_to_write;
 }
 
+int notify_has_data(int has_data) {
+
+}
+
 uint16_t ble_timestamp()
 {
     printf("ble_timestamp\n");
 	return 123;
 }
-
-
 
 static struct tx_queue_callbacks callbacks = {
     .fifo_peek = fifo_peek,
@@ -73,10 +75,35 @@ static struct tx_queue_callbacks callbacks = {
     .fifo_is_empty = fifo_is_empty,
     .fifo_clear = fifo_clear,
     .fifo_write = fifo_write,
-    .ble_timestamp = ble_timestamp
+    .ble_timestamp = ble_timestamp,
+    .notify_has_data = notify_has_data
 };
 static int running_status_enabled = 0;
 static int note_off_as_note_on = 0;
+
+void test_popping() {
+    // Attempt to send pending BLE MIDI tx packets, 
+	// stopping if the BLE stack buffer queue is full.
+    struct tx_queue queue;
+    fifo_clear();
+	tx_queue_init(&queue, &callbacks, running_status_enabled, note_off_as_note_on);
+    tx_queue_set_max_tx_packet_size(&queue, 6);
+    uint8_t msg[3] = { 0xC0, 0x1, 0x2 };
+    tx_queue_push_msg(&queue, msg);
+    tx_queue_push_msg(&queue, msg);
+    tx_queue_push_msg(&queue, msg);
+    tx_queue_pop_pending(&queue);
+	struct ble_midi_writer_t* packet = tx_queue_first_tx_packet(&queue);
+	while (packet) {
+		int send_result = 0;
+		if (send_result == 0) {
+			tx_queue_pop_tx_packet(&queue);
+		} 
+		
+		packet = tx_queue_first_tx_packet(&queue);
+	}
+    int a = 0;
+}
 
 void test_tx_packet_queue() {
     struct tx_queue queue;
@@ -106,7 +133,8 @@ void test_tx_packet_queue() {
 
 int main(int argc, char *argv[])
 {
-    test_tx_packet_queue();
+    // test_tx_packet_queue();
+    test_popping();
     /*
 	struct tx_queue queue;
 	tx_queue_init(&queue, &callbacks, running_status_enabled, note_off_as_note_on);
