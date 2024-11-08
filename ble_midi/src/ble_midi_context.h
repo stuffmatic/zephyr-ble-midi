@@ -5,13 +5,20 @@
 #include <ble_midi/ble_midi.h>
 #include "ble_midi_packet.h"
 
+#ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+#include "tx_queue.h"
+#endif
+
 struct ble_midi_context {
-    atomic_t pending_midi_msg_work_count;
     ble_midi_ready_state_t ready_state;
     int is_initialized;
-    struct ble_midi_writer_t tx_writer;
-    struct ble_midi_writer_t sysex_tx_writer;
     struct ble_midi_callbacks user_callbacks;
+#ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+    struct ble_midi_writer_t tx_writer;
+#else
+    struct tx_queue tx_queue;
+    atomic_t pending_tx_queue_fifo_work_count;
+#endif
 };
 
 void ble_midi_context_init(struct ble_midi_context* context);

@@ -31,10 +31,12 @@ struct tx_queue {
 	int num_remaining_data_bytes;
 	int first_tx_packet_idx;
 	int tx_packet_count;
+	int has_tx_data;
 };
 
 // INIT / CLEAR API. 
 void tx_queue_init(struct tx_queue* queue, struct tx_queue_callbacks* callbacks, int running_status_enabled, int note_off_as_note_on);
+void tx_queue_set_callbacks(struct tx_queue* queue, struct tx_queue_callbacks* callbacks);
 void tx_queue_reset(struct tx_queue* queue);
 
 // Producer API

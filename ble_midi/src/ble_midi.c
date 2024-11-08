@@ -80,53 +80,114 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service, BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SE
 /********* Buffered tx stuff **********/
 
 #ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+#define TX_QUEUE_FIFO_SIZE 1024
 atomic_t has_tx_data = ATOMIC_INIT(0x00);
-RING_BUF_DECLARE(msg_ringbuf, 128);
-RING_BUF_DECLARE(sysex_ringbuf, 128);
+RING_BUF_DECLARE(tx_queue_fifo, TX_QUEUE_FIFO_SIZE);
 
-/* A work item handler for sending the contents of the tx packet */
-static void radio_notif_work_cb(struct k_work *w)
-{
-	/* Send tx packet */
-	send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
-	/* Clear tx packet */
-	ble_midi_writer_reset(&context.tx_writer);
-	/* Indicate that there is no longer data to send */
-	atomic_clear_bit(&has_tx_data, 0);
+int fifo_peek(uint8_t *bytes, int num_bytes) {
+    return ring_buf_peek(&tx_queue_fifo, bytes, num_bytes);
 }
-K_WORK_DEFINE(radio_notif_work, radio_notif_work_cb);
+
+int fifo_read(int num_bytes) {
+    return ring_buf_get(&tx_queue_fifo, NULL, num_bytes);
+}
+
+int fifo_get_free_space()
+{
+    return ring_buf_space_get(&tx_queue_fifo);
+}
+
+int fifo_is_empty()
+{
+    return ring_buf_is_empty(&tx_queue_fifo);
+}
+
+int fifo_clear()
+{
+    ring_buf_reset(&tx_queue_fifo);
+	return 0;
+}
+
+int fifo_write(const uint8_t *bytes, int num_bytes)
+{
+    return ring_buf_put(&tx_queue_fifo, bytes, num_bytes);
+}
+
+static struct tx_queue_callbacks tx_queue_callbacks = {
+    .fifo_peek = fifo_peek,
+    .fifo_read = fifo_read,
+    .fifo_get_free_space = fifo_get_free_space,
+    .fifo_is_empty = fifo_is_empty,
+    .fifo_clear = fifo_clear,
+    .fifo_write = fifo_write,
+    .ble_timestamp = timestamp_ms
+};
+
+/* A work item handler for sending the contents of pending tx packets */
+static void tx_pending_packets_work_cb(struct k_work *w)
+{
+	// Attempt to send pending BLE MIDI tx packets, 
+	// stopping if the BLE stack buffer queue is full.
+	struct ble_midi_writer_t* packet = tx_queue_first_tx_packet(&context.tx_queue);
+	while (packet) {
+		if (packet->tx_buf_size == 0) {
+			// TODO: handle in a better way
+			break;
+		}
+		int send_result = send_packet(packet->tx_buf, packet->tx_buf_size);
+		if (send_result == 0) {
+			// Packet sent, remove it from the queue.
+			tx_queue_pop_tx_packet(&context.tx_queue);
+			break; // TODO: remove this
+		}
+		else if (send_result == -ENOMEM) {
+			// BLE stack buffer queue is full. Retry this packet later
+			break;
+		} else {
+			// Something else went wrong.
+			break; // TODO: is this the right thing to do?
+		}
+		packet = tx_queue_first_tx_packet(&context.tx_queue);
+	}
+}
+K_WORK_DEFINE(tx_pending_packets_work, tx_pending_packets_work_cb);
 
 /* Called just before each BLE connection event. */
 static void radio_notif_handler(void)
 {
 	/* If there is data to send, submit a work item to send it. */
-	if (atomic_test_bit(&has_tx_data, 0)) {
-		k_work_submit(&radio_notif_work);
+	if (1 || atomic_test_bit(&has_tx_data, 0)) { // TODO: actually check if there is data
+		k_work_submit(&tx_pending_packets_work);
 	}
 }
 
-/* A work item handler that adds an enqueued MIDI message to the tx packet */
-static void midi_msg_work_cb(struct k_work *w);
-static K_WORK_DEFINE(midi_msg_work, midi_msg_work_cb);
-static void midi_msg_work_cb(struct k_work *w)
+/* A work item handler that reads chunks from the tx queue FIFO */
+static void tx_queue_fifo_work_cb(struct k_work *w);
+static K_WORK_DEFINE(tx_queue_fifo_work, tx_queue_fifo_work_cb);
+static void tx_queue_fifo_work_cb(struct k_work *w)
 {
-	/* Get the MIDI bytes to send. */
+	tx_queue_pop_pending(&context.tx_queue);
+
+	/*
+	// Get the MIDI bytes to send.
 	uint8_t msg[3];
 	ring_buf_get(&msg_ringbuf, msg, 3);
-	/* Write the MIDI bytes to the tx packet */
+	// Write the MIDI bytes to the tx packet
 	uint16_t timestamp = timestamp_ms();
 	ble_midi_writer_add_msg(&context.tx_writer, msg, timestamp);
-	/* Signal that there is data to send at the next connection event */
+	// Signal that there is data to send at the next connection event
 	atomic_set_bit(&has_tx_data, 0);
+	*/
 	
 	// k_sleep(K_MSEC(10)); // simulate long running work item. for testing re-submission logic.
 
-	int unfinished_midi_msg_work = atomic_get(&context.pending_midi_msg_work_count);
-	if (unfinished_midi_msg_work > 1) {
+	int unfinished_work_count = atomic_get(&context.pending_tx_queue_fifo_work_count);
+
+	if (unfinished_work_count > 1) {
 		// There are more midi_msg_work items waiting. Resubmit.
-		int submit_result = k_work_submit(&midi_msg_work);
+		int submit_result = k_work_submit(&tx_queue_fifo_work);
 	}
-	atomic_dec(&context.pending_midi_msg_work_count);
+	atomic_dec(&context.pending_tx_queue_fifo_work_count);
 }
 
 #endif /* CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT */
@@ -163,21 +224,27 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	 */
 	int actual_mtu = bt_gatt_get_mtu(conn);
 	int tx_buf_size_new = actual_mtu - 3;
-	if (context.tx_writer.tx_buf_size > tx_buf_size_new) {
-		// TODO: handle this somehow?
-		LOG_WRN("Lowering tx_buf_size from %d to %d", context.tx_writer.tx_buf_size,
-			tx_buf_size_new);
-	}
-
 	struct bt_conn_info info = {0};
 	int e = bt_conn_get_info(conn, &info);
 
 	int tx_buf_max_size = tx_buf_size_new > BLE_MIDI_TX_PACKET_MAX_SIZE
 				      ? BLE_MIDI_TX_PACKET_MAX_SIZE
 				      : tx_buf_size_new;
+
+#ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+	if (context.tx_writer.tx_buf_size > tx_buf_size_new) {
+		// TODO: handle this somehow?
+		// TODO: warn about this also when doing buffered TX
+		LOG_WRN("Lowering tx_buf_size from %d to %d", context.tx_writer.tx_buf_size,
+			tx_buf_size_new);
+	}
 	context.tx_writer.tx_buf_max_size = tx_buf_max_size;
-	context.sysex_tx_writer.tx_buf_max_size = tx_buf_max_size;
-	
+#else
+	tx_queue_set_max_tx_packet_size(&context.tx_queue, tx_buf_max_size);
+	atomic_inc(&context.pending_tx_queue_fifo_work_count);
+	int submit_result = k_work_submit(&tx_queue_fifo_work); // TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
+#endif
+
 	LOG_INF("MTU updated: tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
 		tx_buf_max_size);
 }
@@ -254,7 +321,10 @@ enum ble_midi_error_t ble_midi_init(struct ble_midi_callbacks *callbacks)
 	context.user_callbacks.sysex_start_cb = callbacks->sysex_start_cb;
 	context.user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 	context.user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
-#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
+
+	
+#ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+	tx_queue_set_callbacks(&context.tx_queue, &tx_queue_callbacks);
 	conn_event_trigger_init(radio_notif_handler); // TODO: return error
 #endif
 	LOG_INF("Initialized BLE MIDI");
@@ -270,46 +340,59 @@ enum ble_midi_error_t ble_midi_tx_msg(uint8_t *bytes)
 	ble_midi_writer_add_msg(&context.tx_writer, bytes, timestamp_ms());
 	return send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
 #else
-	/* Enqueue the MIDI message ... */
-	ring_buf_put(&msg_ringbuf, bytes, 3);
+	int push_result = tx_queue_push_msg(&context.tx_queue, bytes); // TODO: check error
+
 	/* ... and submit a work item for adding the message to the next outgoing packet. */
-	atomic_inc(&context.pending_midi_msg_work_count);
-	int submit_result = k_work_submit(&midi_msg_work); // TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
+
+	atomic_inc(&context.pending_tx_queue_fifo_work_count);
+	int submit_result = k_work_submit(&tx_queue_fifo_work); // TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
 #endif
 	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
 enum ble_midi_error_t ble_midi_tx_sysex_start()
 {
-	ble_midi_writer_reset(&context.sysex_tx_writer);
-	ble_midi_writer_start_sysex_msg(&context.sysex_tx_writer, timestamp_ms());
-	int send_result = send_packet(context.sysex_tx_writer.tx_buf, context.sysex_tx_writer.tx_buf_size);
-	return BLE_MIDI_SUCCESS; // TODO: report errors
-}
-
-enum ble_midi_error_t ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
-{
-	ble_midi_writer_reset(&context.sysex_tx_writer);
-	int add_result =
-		ble_midi_writer_add_sysex_data(&context.sysex_tx_writer, bytes, num_bytes, timestamp_ms());
-	if (add_result < 0) {
-		LOG_ERR("ble_midi_writer_add_sysex_data failed with error %d", add_result);
-		return -EINVAL;
-	}
-
-	int send_rc = send_packet(context.sysex_tx_writer.tx_buf, add_result);
-	if (send_rc == 0) {
-		return add_result; /* Return number of sent bytes on success */
-	}
+#ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+	ble_midi_writer_reset(&context.tx_writer);
+	ble_midi_writer_start_sysex_msg(&context.tx_writer, timestamp_ms());
+	return send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
+#else
+	// TODO
+#endif
 	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
 enum ble_midi_error_t ble_midi_tx_sysex_end()
 {
-	ble_midi_writer_reset(&context.sysex_tx_writer);
-	ble_midi_writer_end_sysex_msg(&context.sysex_tx_writer, timestamp_ms());
-	int send_result = send_packet(context.sysex_tx_writer.tx_buf, context.sysex_tx_writer.tx_buf_size);
+	#ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+	ble_midi_writer_reset(&context.tx_writer);
+	ble_midi_writer_end_sysex_msg(&context.tx_writer, timestamp_ms());
+	return send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
+#else
+	// TODO
+#endif
 	return BLE_MIDI_SUCCESS; // TODO: report errors
+}
+
+enum ble_midi_error_t ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
+{
+#ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+	ble_midi_writer_reset(&context.tx_writer);
+	int add_result =
+		ble_midi_writer_add_sysex_data(&context.tx_writer, bytes, num_bytes, timestamp_ms());
+	if (add_result < 0) {
+		LOG_ERR("ble_midi_writer_add_sysex_data failed with error %d", add_result);
+		return -EINVAL;
+	}
+
+	int send_rc = send_packet(context.tx_writer.tx_buf, add_result);
+	if (send_rc == 0) {
+		return add_result; /* Return number of sent bytes on success */
+	}
+	return BLE_MIDI_SUCCESS; // TODO: report errors
+#else
+	// TODO
+#endif
 }
 
 #ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL

@@ -11,7 +11,9 @@ struct fifo {
     int num_bytes;
 };
 
-static struct fifo fifo;
+static struct fifo fifo = {
+    .num_bytes = 0
+};
 
 int fifo_peek(uint8_t *bytes, int num_bytes) {
     int num_bytes_to_peek = num_bytes > fifo.num_bytes ? fifo.num_bytes : num_bytes;
@@ -62,23 +64,51 @@ uint16_t ble_timestamp()
 	return 123;
 }
 
+
+
+static struct tx_queue_callbacks callbacks = {
+    .fifo_peek = fifo_peek,
+    .fifo_read = fifo_read,
+    .fifo_get_free_space = fifo_get_free_space,
+    .fifo_is_empty = fifo_is_empty,
+    .fifo_clear = fifo_clear,
+    .fifo_write = fifo_write,
+    .ble_timestamp = ble_timestamp
+};
+static int running_status_enabled = 0;
+static int note_off_as_note_on = 0;
+
+void test_tx_packet_queue() {
+    struct tx_queue queue;
+    fifo_clear();
+	tx_queue_init(&queue, &callbacks, running_status_enabled, note_off_as_note_on);
+    assert(!queue.has_tx_data && "Expected new queue to not have tx data");
+    assert(queue.tx_packet_count == 1 && "Expected new queue to have one active tx packet");
+    tx_queue_push_tx_packet(&queue);
+    assert(queue.tx_packet_count == 2);
+    tx_queue_push_tx_packet(&queue);
+    tx_queue_push_tx_packet(&queue);
+    assert(queue.tx_packet_count == 4);
+    // Pushing beyond max packet count should not increase packet count
+    tx_queue_push_tx_packet(&queue);
+    assert(queue.tx_packet_count == 4);
+
+    tx_queue_pop_tx_packet(&queue);
+    assert(queue.tx_packet_count == 3);
+    tx_queue_pop_tx_packet(&queue);
+    assert(queue.tx_packet_count == 2);
+    tx_queue_pop_tx_packet(&queue);
+    assert(queue.tx_packet_count == 1);
+    // Popping beyond last packet should not decrease packet count.
+    tx_queue_pop_tx_packet(&queue);
+    assert(queue.tx_packet_count == 1);
+}
+
 int main(int argc, char *argv[])
 {
-    // Init FIFO
-    fifo.num_bytes = 0;
-
+    test_tx_packet_queue();
+    /*
 	struct tx_queue queue;
-    struct tx_queue_callbacks callbacks = {
-        .fifo_peek = fifo_peek,
-	    .fifo_read = fifo_read,
-	    .fifo_get_free_space = fifo_get_free_space,
-	    .fifo_is_empty = fifo_is_empty,
-	    .fifo_clear = fifo_clear,
-	    .fifo_write = fifo_write,
-	    .ble_timestamp = ble_timestamp
-    };
-    int running_status_enabled = 0;
-    int note_off_as_note_on = 0;
 	tx_queue_init(&queue, &callbacks, running_status_enabled, note_off_as_note_on);
 
     uint8_t msg[3] = { 0xC0, 0x1, 0x2 };
@@ -91,5 +121,7 @@ int main(int argc, char *argv[])
     msg[0] = 0xe0;
     tx_queue_push_msg(&queue, msg);
     tx_queue_pop_pending(&queue);
-    tx_queue_reset(&queue);
+    tx_queue_reset(&queue); */
+
+    return 0;
 }

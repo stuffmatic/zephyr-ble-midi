@@ -41,7 +41,9 @@ static int add_3_byte_chunk_to_packet(struct tx_queue* queue, uint8_t* bytes) {
 	int timestamp = queue->callbacks.ble_timestamp();
 	enum ble_midi_packet_error_t add_result = BLE_MIDI_PACKET_SUCCESS;
 
-    // Make two attempts to add 
+    // Make two attempts to add: 
+	// 1. add to the current tx packet if there is room
+	// 2. add to the next tx packet if there is one
 	for (int attempt = 0; attempt < 2; attempt++) {
 		struct ble_midi_writer_t* tx_packet = tx_queue_last_tx_packet(queue);
 		if (first_byte == SYSEX_START) {
@@ -65,7 +67,8 @@ static int add_3_byte_chunk_to_packet(struct tx_queue* queue, uint8_t* bytes) {
 	}
 
 	if (add_result == BLE_MIDI_PACKET_SUCCESS) {
-		// chunk was added, we're done
+		// chunk was added, we're done.
+		queue->has_tx_data = 1;
 		return 0;
 	} else if (add_result == BLE_MIDI_PACKET_ERROR_PACKET_FULL) {
         return 1;
@@ -85,22 +88,31 @@ void tx_queue_reset(struct tx_queue* queue) {
 	queue->num_remaining_data_bytes = 0;
 	queue->first_tx_packet_idx = 0;
 	queue->tx_packet_count = 1;
-	queue->callbacks.fifo_clear();
+	if (queue->callbacks.fifo_clear) {
+		// TODO: handle better
+		queue->callbacks.fifo_clear();
+	}
+	queue->has_tx_data = 0;
     
     for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
         ble_midi_writer_reset(&queue->tx_packets[i]);
     }
 }
 
+void tx_queue_set_callbacks(struct tx_queue* queue, struct tx_queue_callbacks* callbacks) {
+	if (callbacks) {
+		queue->callbacks.ble_timestamp = callbacks->ble_timestamp;
+		queue->callbacks.fifo_get_free_space = callbacks->fifo_get_free_space;
+		queue->callbacks.fifo_is_empty = callbacks->fifo_is_empty;
+		queue->callbacks.fifo_peek = callbacks->fifo_peek;
+		queue->callbacks.fifo_read = callbacks->fifo_read;
+		queue->callbacks.fifo_write = callbacks->fifo_write;
+		queue->callbacks.fifo_clear = callbacks->fifo_clear;
+	}
+}
+
 void tx_queue_init(struct tx_queue* queue, struct tx_queue_callbacks* callbacks, int running_status_enabled, int note_off_as_note_on) {
-	// Assign callbacks
-	queue->callbacks.ble_timestamp = callbacks->ble_timestamp;
-	queue->callbacks.fifo_get_free_space = callbacks->fifo_get_free_space;
-	queue->callbacks.fifo_is_empty = callbacks->fifo_is_empty;
-	queue->callbacks.fifo_peek = callbacks->fifo_peek;
-	queue->callbacks.fifo_read = callbacks->fifo_read;
-	queue->callbacks.fifo_write = callbacks->fifo_write;
-	queue->callbacks.fifo_clear = callbacks->fifo_clear;
+	tx_queue_set_callbacks(queue, callbacks);
 
 	for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
         ble_midi_writer_init(&queue->tx_packets[i], running_status_enabled, note_off_as_note_on);
@@ -181,10 +193,11 @@ int tx_queue_pop_pending(struct tx_queue* queue) {
 			// sysex start, sysex end or non-sysex msg
 			add_result = add_3_byte_chunk_to_packet(queue, msg_bytes); 
 			if (add_result == 0 || add_result < 0) {
+				// printk("added 3 byte chunk %d\n", add_result);
 				queue->callbacks.fifo_read(3);
 			} else {
 				// TODO: no room in any packet. 
-				break;
+				return 1;
 			}
 		}
 		else if (first_byte == TX_MAX_PACKET_SIZE_CHUNK_ID) {
@@ -203,6 +216,8 @@ int tx_queue_pop_pending(struct tx_queue* queue) {
 			// TODO: handle the case where some but not all bytes were added
 		}
 	}
+
+	return 0;
 }
 
 int tx_queue_push_tx_packet(struct tx_queue* queue) {
@@ -219,16 +234,17 @@ int tx_queue_push_tx_packet(struct tx_queue* queue) {
 }
 
 int tx_queue_pop_tx_packet(struct tx_queue* queue) {
-    if (queue->tx_packet_count <= 0) {
+	struct ble_midi_writer_t* packet_to_pop = tx_queue_first_tx_packet(queue);
+	ble_midi_writer_reset(packet_to_pop);
+
+    if (queue->tx_packet_count <= 1) {
+		queue->has_tx_data = 0;
         return 1;
     }
 
-	struct ble_midi_writer_t* packet_to_pop = tx_queue_first_tx_packet(queue);
-	ble_midi_writer_reset(packet_to_pop);
-	
     queue->tx_packet_count--;
     queue->first_tx_packet_idx = (queue->first_tx_packet_idx + 1) % BLE_MIDI_TX_QUEUE_PACKET_COUNT;
-
+	
     return 0;
 }
 
