@@ -38,7 +38,7 @@ static enum tx_queue_error write_3_byte_chunk(struct tx_queue* queue, const uint
 		return TX_QUEUE_FIFO_FULL;
 	}
 	int write_result = queue->callbacks.fifo_write(bytes, 3);
-	return write_result == 0 ? TX_QUEUE_SUCCESS : TX_QUEUE_FIFO_FULL;
+	return write_result == 3 ? TX_QUEUE_SUCCESS : TX_QUEUE_FIFO_FULL;
 }
 
 // TODO: return success - 0, invalid data -1,  or no room 1
@@ -66,7 +66,7 @@ static int add_3_byte_chunk_to_packet(struct tx_queue* queue, uint8_t* bytes) {
 		}
 
 		if (add_result == BLE_MIDI_PACKET_ERROR_PACKET_FULL) {
-			int push_result = tx_queue_push_tx_packet(queue);
+			int push_result = tx_queue_tx_packet_add(queue);
             if (push_result) {
                 // No free tx packets.
                 break;
@@ -100,7 +100,6 @@ void tx_queue_reset(struct tx_queue* queue) {
 	queue->first_tx_packet_idx = 0;
 	queue->tx_packet_count = 1;
 	if (queue->callbacks.fifo_clear) {
-		// TODO: handle better
 		queue->callbacks.fifo_clear();
 	}
 
@@ -108,6 +107,8 @@ void tx_queue_reset(struct tx_queue* queue) {
     
     for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
         ble_midi_writer_reset(&queue->tx_packets[i]);
+		// Also reset buffer max size.
+		queue->tx_packets[i].tx_buf_max_size = 0;
     }
 }
 
@@ -195,7 +196,7 @@ int tx_queue_push_sysex_data(struct tx_queue* queue, const uint8_t* bytes, int n
 	return num_bytes_to_send;
 }
 
-int tx_queue_pop_pending(struct tx_queue* queue) {
+int tx_queue_read_from_fifo(struct tx_queue* queue) {
 	uint8_t msg_bytes[3] = { 0, 0, 0};
 
 	while (!queue->callbacks.fifo_is_empty()) {
@@ -233,7 +234,7 @@ int tx_queue_pop_pending(struct tx_queue* queue) {
 	return 0;
 }
 
-int tx_queue_push_tx_packet(struct tx_queue* queue) {
+int tx_queue_tx_packet_add(struct tx_queue* queue) {
     if (queue->tx_packet_count >= BLE_MIDI_TX_QUEUE_PACKET_COUNT) {
         return 1;
     }
@@ -246,7 +247,7 @@ int tx_queue_push_tx_packet(struct tx_queue* queue) {
     return 0;
 }
 
-int tx_queue_pop_tx_packet(struct tx_queue* queue) {
+int tx_queue_on_tx_packet_sent(struct tx_queue* queue) {
 	struct ble_midi_writer_t* packet_to_pop = tx_queue_first_tx_packet(queue);
 	if (packet_to_pop) {
 		ble_midi_writer_reset(packet_to_pop);

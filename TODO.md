@@ -11,6 +11,7 @@
 
 * can't select bt_central in module conf
 * remove device from macos audio midi setup made it possible to connect again 🤷‍♂️
+* only retry transmission after ble buffer queue full once notify cb is  called
 
 # new event trigger
 

@@ -4,15 +4,25 @@
 #include <string.h>
 #include "../ble_midi/src/tx_queue.h"
 
+void assert_true(int condition, const char* message) {
+    assert(condition && message);
+}
+
+void assert_eq(int a, int b, const char* message) {
+    assert(a == b && message);
+}
+
 // Quick and dirty FIFO implementation for testing
-#define FIFO_SIZE 1024
+#define FIFO_MAX_SIZE 1024
 struct fifo {
-    uint8_t bytes[FIFO_SIZE];
+    uint8_t bytes[FIFO_MAX_SIZE];
+    int capcity;
     int num_bytes;
 };
 
 static struct fifo fifo = {
-    .num_bytes = 0
+    .num_bytes = 0,
+    .capcity = 0
 };
 
 int fifo_peek(uint8_t *bytes, int num_bytes) {
@@ -34,7 +44,7 @@ int fifo_read(int num_bytes) {
 
 int fifo_get_free_space()
 {
-    return FIFO_SIZE - fifo.num_bytes;
+    return fifo.capcity - fifo.num_bytes;
 }
 
 int fifo_is_empty()
@@ -58,7 +68,7 @@ int fifo_write(const uint8_t *bytes, int num_bytes)
     return num_bytes_to_write;
 }
 
-int notify_has_data(int has_data) {
+void notify_has_data(int has_data) {
 
 }
 
@@ -81,23 +91,42 @@ static struct tx_queue_callbacks callbacks = {
 static int running_status_enabled = 0;
 static int note_off_as_note_on = 0;
 
+static void fifo_reset(int fifo_capacity) {
+    fifo_clear();
+    fifo.capcity = fifo_capacity;
+}
+
+void init_test_queue(struct tx_queue* queue, int max_packet_size, int fifo_capacity) {
+    // Make sure the FIFO is empty
+    fifo_reset(fifo_capacity);
+    // Initialize the queue
+	tx_queue_init(queue, &callbacks, running_status_enabled, note_off_as_note_on);
+    // Add a set packet size request to the FIFO
+    tx_queue_set_max_tx_packet_size(queue, max_packet_size);
+    assert_true(queue->tx_packets->tx_buf_max_size == 0, "TX packet size should be 0 after reset");
+    // Read request from FIFO, which should set the max packet size 
+    tx_queue_read_from_fifo(queue);
+    assert_true(queue->tx_packets->tx_buf_max_size == max_packet_size, "TX packet size should be set");
+}
+
 void test_popping() {
+    struct tx_queue queue;
+    init_test_queue(&queue, 6, 128);
+
     // Attempt to send pending BLE MIDI tx packets, 
 	// stopping if the BLE stack buffer queue is full.
-    struct tx_queue queue;
-    fifo_clear();
-	tx_queue_init(&queue, &callbacks, running_status_enabled, note_off_as_note_on);
-    tx_queue_set_max_tx_packet_size(&queue, 6);
+    
+    
     uint8_t msg[3] = { 0xC0, 0x1, 0x2 };
     tx_queue_push_msg(&queue, msg);
     tx_queue_push_msg(&queue, msg);
     tx_queue_push_msg(&queue, msg);
-    tx_queue_pop_pending(&queue);
+    tx_queue_read_from_fifo(&queue);
 	struct ble_midi_writer_t* packet = tx_queue_first_tx_packet(&queue);
 	while (packet) {
 		int send_result = 0;
 		if (send_result == 0) {
-			tx_queue_pop_tx_packet(&queue);
+			tx_queue_on_tx_packet_sent(&queue);
 		} 
 		
 		packet = tx_queue_first_tx_packet(&queue);
@@ -105,36 +134,77 @@ void test_popping() {
     int a = 0;
 }
 
-void test_tx_packet_queue() {
-    struct tx_queue queue;
-    fifo_clear();
-	tx_queue_init(&queue, &callbacks, running_status_enabled, note_off_as_note_on);
-    assert(!queue.has_tx_data && "Expected new queue to not have tx data");
-    assert(queue.tx_packet_count == 1 && "Expected new queue to have one active tx packet");
-    tx_queue_push_tx_packet(&queue);
-    assert(queue.tx_packet_count == 2);
-    tx_queue_push_tx_packet(&queue);
-    tx_queue_push_tx_packet(&queue);
-    assert(queue.tx_packet_count == 4);
-    // Pushing beyond max packet count should not increase packet count
-    tx_queue_push_tx_packet(&queue);
-    assert(queue.tx_packet_count == 4);
+static enum tx_queue_error add_note_on(struct tx_queue* queue) {
+    uint8_t bytes[3] = {
+        0x90,
+        0x60,
+        0x7f
+    };
+    return tx_queue_push_msg(queue, bytes);
+}
 
-    tx_queue_pop_tx_packet(&queue);
-    assert(queue.tx_packet_count == 3);
-    tx_queue_pop_tx_packet(&queue);
-    assert(queue.tx_packet_count == 2);
-    tx_queue_pop_tx_packet(&queue);
-    assert(queue.tx_packet_count == 1);
-    // Popping beyond last packet should not decrease packet count.
-    tx_queue_pop_tx_packet(&queue);
-    assert(queue.tx_packet_count == 1);
+void test_non_sysex_msgs() {
+    // Use a small packet size so that tx packet fill up quickly
+    // a ten byte packet can hold two note on messages (not using running status)
+    int tx_packet_size = 10; 
+
+    // Create and initialize the queue
+    struct tx_queue queue;
+    init_test_queue(&queue, tx_packet_size, 128);
+
+    // Check that the queue is empty
+    assert_true(!queue.has_tx_data, "Expected new queue to not have tx data");
+    assert_true(queue.tx_packet_count == 1, "Expected new queue to have one active tx packet");
+
+    // Push a note on message ...
+    add_note_on(&queue);
+    // ... and read it from the FIFO 
+    tx_queue_read_from_fifo(&queue);
+    assert_true(queue.has_tx_data, "Queue should have data");
+    assert_true(queue.tx_packet_count == 1, "Queue should have one packet");
+
+    // Push two more note on message ...
+    add_note_on(&queue);
+    add_note_on(&queue);
+    // ... and read them from the FIFO 
+    tx_queue_read_from_fifo(&queue);
+    assert_true(queue.has_tx_data, "Queue should have data");
+    assert_true(queue.tx_packet_count == 2, "Queue should have one packet");
+
+    // The first packet in the queue should now hold two note one messages and the 
+    // last (second packet) should hold one.
+    struct ble_midi_writer_t* first_packet = tx_queue_first_tx_packet(&queue);
+    struct ble_midi_writer_t* last_packet = tx_queue_last_tx_packet(&queue);
+    assert_true(first_packet->tx_buf_size > last_packet->tx_buf_size, "first packet should be larger than last packet");
+
+    // Mark first packet as sent
+    tx_queue_on_tx_packet_sent(&queue);
+    assert_true(queue.tx_packet_count == 1, "Queue should have one packet");
+    assert_true(tx_queue_first_tx_packet(&queue) == last_packet, "the new first packet should now be the old last packet");
+
+    // Mark second packet as sent
+    tx_queue_on_tx_packet_sent(&queue);
+    assert_true(queue.tx_packet_count == 1 && !queue.has_tx_data, "Queue should have one packet and no data");
+    
+}
+
+void test_full_fifo() {
+    // Create and initialize the queue
+    int fifo_capacity = 7;
+    struct tx_queue queue;
+    init_test_queue(&queue, 64, fifo_capacity);
+
+    assert_eq(add_note_on(&queue), TX_QUEUE_SUCCESS, "message should fit in FIFO");
+    assert_eq(add_note_on(&queue), TX_QUEUE_SUCCESS, "message should fit in FIFO");
+    int fifo_size_before_failed_add = fifo.num_bytes;
+    assert_eq(add_note_on(&queue), TX_QUEUE_FIFO_FULL, "message should not fit in FIFO");
+    assert_eq(fifo_size_before_failed_add, fifo.num_bytes, "Failed not on add should not grow FIFO");
 }
 
 int main(int argc, char *argv[])
 {
-    // test_tx_packet_queue();
-    test_popping();
+    // test_non_sysex_msgs();
+    test_full_fifo();
     /*
 	struct tx_queue queue;
 	tx_queue_init(&queue, &callbacks, running_status_enabled, note_off_as_note_on);
@@ -144,11 +214,11 @@ int main(int argc, char *argv[])
     tx_queue_push_msg(&queue, msg);
     msg[0] = 0xd0;
     tx_queue_push_msg(&queue, msg);
-    tx_queue_pop_pending(&queue);
-    tx_queue_pop_tx_packet(&queue);
+    tx_queue_read_from_fifo(&queue);
+    tx_queue_on_tx_packet_sent(&queue);
     msg[0] = 0xe0;
     tx_queue_push_msg(&queue, msg);
-    tx_queue_pop_pending(&queue);
+    tx_queue_read_from_fifo(&queue);
     tx_queue_reset(&queue); */
 
     return 0;

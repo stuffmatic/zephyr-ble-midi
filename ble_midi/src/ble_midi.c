@@ -138,7 +138,7 @@ static void tx_pending_packets_work_cb(struct k_work *w)
 	while (packet) {
 		int send_result = send_packet(packet->tx_buf, packet->tx_buf_size);
 		if (send_result == 0) {
-			tx_queue_pop_tx_packet(&context.tx_queue);
+			tx_queue_on_tx_packet_sent(&context.tx_queue);
 		} 
 		else if (send_result == -ENOMEM) {
 			// BLE stack buffer queue is full. Retry this packet later
@@ -166,7 +166,7 @@ static void tx_queue_fifo_work_cb(struct k_work *w);
 static K_WORK_DEFINE(tx_queue_fifo_work, tx_queue_fifo_work_cb);
 static void tx_queue_fifo_work_cb(struct k_work *w)
 {
-	tx_queue_pop_pending(&context.tx_queue);
+	tx_queue_read_from_fifo(&context.tx_queue);
 
 	// k_sleep(K_MSEC(10)); // simulate long running work item. for testing re-submission logic.
 

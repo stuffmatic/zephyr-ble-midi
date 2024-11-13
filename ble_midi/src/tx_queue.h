@@ -16,23 +16,28 @@ enum tx_queue_error {
 };
 
 struct tx_queue_callbacks {
+	// Returns the number of bytes peeked
 	int (*fifo_peek)(uint8_t* bytes, int num_bytes);
+	// Returns the number of bytes read
 	int (*fifo_read)(int num_bytes);
 	int (*fifo_get_free_space)();
 	int (*fifo_is_empty)();
 	int (*fifo_clear)();
+	// Returns the number of bytes written
 	int (*fifo_write)(const uint8_t* bytes, int num_bytes);
-	int (*notify_has_data)(int has_data);
+	void (*notify_has_data)(int has_data);
 	uint16_t (*ble_timestamp)();
 };
 
 struct tx_queue {
 	struct tx_queue_callbacks callbacks;
 	struct ble_midi_writer_t tx_packets[BLE_MIDI_TX_QUEUE_PACKET_COUNT];
-	int num_remaining_data_bytes;
 	int first_tx_packet_idx;
 	int tx_packet_count;
 	int has_tx_data;
+	// Used to keep track of how many additional sysex data bytes to read from the
+	// FIFO in case the packet queue got filled up with a partial sysex message
+	int num_remaining_data_bytes;
 };
 
 // INIT / CLEAR API. 
@@ -50,28 +55,30 @@ int tx_queue_push_sysex_data(struct tx_queue* queue, const uint8_t* bytes, int n
 // Consumer API
 
 /**
- * Pop pending FIFO messages one by one and append them to a pending BLE MIDI tx packet.
+ * Read pending FIFO messages one by one and append them to a pending BLE MIDI tx packet.
  * If one packet is full, start filling up the next, if there is one available.
  * Only remove data from FIFO that has been written to a packet.
  */
-int tx_queue_pop_pending(struct tx_queue* queue);
+int tx_queue_read_from_fifo(struct tx_queue* queue);
 
 /**
  * Move on to fill the next tx packet in the queue. 
  * Call this when a tx packet has been filled. 
  * Returns 0 on success or non-zero if all tx packets have been filled.
  */
-int tx_queue_push_tx_packet(struct tx_queue* queue);
+int tx_queue_tx_packet_add(struct tx_queue* queue);
 
 /**
  * Remove the first tx packet in the queue.
  * Call this when a tx packet has been sent.
  * Returns 0 on success or non-zero if there is no packet to pop.
  */
-int tx_queue_pop_tx_packet(struct tx_queue* queue);
+int tx_queue_on_tx_packet_sent(struct tx_queue* queue);
 
+/* The first BLE MIDI tx packet in the queue */
 struct ble_midi_writer_t* tx_queue_first_tx_packet(struct tx_queue* queue);
 
+/* The last BLE MIDI tx packet in the queue */
 struct ble_midi_writer_t* tx_queue_last_tx_packet(struct tx_queue* queue);
 
 #endif // BLE_MIDI_TX_QUEUE_H
