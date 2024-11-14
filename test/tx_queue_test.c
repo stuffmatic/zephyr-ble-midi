@@ -222,15 +222,47 @@ static void test_multi_packet_sysex() {
 
     assert_eq(queue.tx_packets[0].tx_buf_size, queue.tx_packets[0].tx_buf_max_size, "First sysex packet should be full");
     assert_eq(queue.tx_packets[1].tx_buf_size, queue.tx_packets[1].tx_buf_max_size, "Second sysex packet should be full");
+    assert_true(queue.tx_packets[2].tx_buf_size < queue.tx_packets[2].tx_buf_max_size, "Second sysex packet should be partially filled");
     assert_eq(queue.tx_packet_count, 3, "Sysex message should span 3 tx packets");
+
+    assert_eq(tx_queue_on_tx_packet_sent(&queue), TX_QUEUE_SUCCESS, "popping first packet should succeed");
+    assert_true(queue.has_tx_data, "queue should have data after popping first packet");
+    assert_eq(tx_queue_on_tx_packet_sent(&queue), TX_QUEUE_SUCCESS, "popping second packet should succeed");
+    assert_true(queue.has_tx_data, "queue should have data after popping second packet");
+    assert_eq(tx_queue_on_tx_packet_sent(&queue), TX_QUEUE_SUCCESS, "popping third packet should succeed");
+    assert_true(!queue.has_tx_data, "queue should not have data after popping third packet");
+    assert_eq(tx_queue_on_tx_packet_sent(&queue), TX_QUEUE_NO_TX_PACKETS, "popping beyond third packet should not succeed");
+}
+
+static void test_continued_multi_packet_sysex() {
+    int tx_packet_size = 10; 
+    int fifo_capacity = 256;
+    struct tx_queue queue;
+    init_test_queue(&queue, tx_packet_size, fifo_capacity);
+
+    // Add a sysex message that is too large to fit into all tx packets
+    uint8_t sysex_data_bytes[200];
+    int sysex_data_byte_count = sizeof(sysex_data_bytes);
+    for (int i = 0; i < sysex_data_byte_count; i++) {
+        sysex_data_bytes[i] = i % 16;
+    }
+
+    tx_queue_fifo_add_sysex_start(&queue);
+    tx_queue_fifo_add_sysex_data(&queue, sysex_data_bytes, sysex_data_byte_count);
+    tx_queue_fifo_add_sysex_end(&queue);
+
+    tx_queue_read_from_fifo(&queue);
+    int a = 0;
 }
 
 int main(int argc, char *argv[])
 {
     test_non_sysex_msgs();
+    test_continued_non_sysex_msgs();
     test_full_fifo();
     test_full_packet_queue();
     test_multi_packet_sysex();
+    test_continued_multi_packet_sysex();
 
     return 0;
 }
