@@ -33,30 +33,32 @@ static void set_has_tx_data(struct tx_queue* queue, int has_data) {
 	}
 }
 
-static enum tx_queue_error write_3_byte_chunk(struct tx_queue* queue, const uint8_t* bytes) {
+static enum tx_queue_error write_3_byte_chunk_to_fifo(struct tx_queue* queue, const uint8_t* bytes) {
 	if (queue->callbacks.fifo_get_free_space() < 3) {
 		return TX_QUEUE_FIFO_FULL;
 	}
 	int write_result = queue->callbacks.fifo_write(bytes, 3);
-	return write_result == 3 ? TX_QUEUE_SUCCESS : TX_QUEUE_FIFO_FULL;
+	return write_result == 3 ? TX_QUEUE_SUCCESS : TX_QUEUE_FIFO_WRITE_ERROR;
 }
 
-// TODO: return success - 0, invalid data -1,  or no room 1
-static int add_3_byte_chunk_to_packet(struct tx_queue* queue, uint8_t* bytes) {	
-	
+/**
+ * Attempt to add a 3 byte chunk to a tx packet, i.e one of:
+ * - non-sysex message
+ * - sysex start
+ * - sysex end
+ * Sysex data chunks have variable size and are handled separately.
+ */
+static enum tx_queue_error add_3_byte_chunk_to_tx_packet(struct tx_queue* queue, uint8_t* bytes) {	
 	int first_byte = bytes[0];
 	int timestamp = queue->callbacks.ble_timestamp();
 	enum ble_midi_packet_error_t add_result = BLE_MIDI_PACKET_SUCCESS;
 
     // Make two attempts to add: 
 	// 1. add to the current tx packet if there is room
-	// 2. add to the next tx packet if there is one
+	// 2. if not, add to the next tx packet if there is one
 	for (int attempt = 0; attempt < 2; attempt++) {
 		struct ble_midi_writer_t* tx_packet = tx_queue_last_tx_packet(queue);
-		if (!tx_packet) {
-			// no packets left
-			return 1;
-		}
+
 		if (first_byte == SYSEX_START) {
 			add_result = ble_midi_writer_start_sysex_msg(tx_packet, timestamp);
 		} else if (first_byte == SYSEX_END) {
@@ -64,34 +66,62 @@ static int add_3_byte_chunk_to_packet(struct tx_queue* queue, uint8_t* bytes) {
 		} else {
 			add_result = ble_midi_writer_add_msg(tx_packet, bytes, timestamp);
 		}
-
+	
 		if (add_result == BLE_MIDI_PACKET_ERROR_PACKET_FULL) {
-			int push_result = tx_queue_tx_packet_add(queue);
-            if (push_result) {
-                // No free tx packets.
-                break;
-            }
-		} else {
-			// chunk was either added or invalid.
+			if (attempt == 0) {
+				// No room in packet on the first attempt, try to add another packet
+				if (tx_queue_tx_packet_add(queue) == TX_QUEUE_NO_TX_PACKETS) {
+					// No free tx packets.
+					break;
+				}
+			}
+		} else if (add_result == BLE_MIDI_PACKET_SUCCESS) {
+			// done
 			break;
+		} else {
+			// failed to add the chunk for some other reason than a full packet
+			return TX_QUEUE_INVALID_DATA;
 		}
 	}
 
 	if (add_result == BLE_MIDI_PACKET_SUCCESS) {
 		// chunk was added, we're done.
 		set_has_tx_data(queue, 1);
-		return 0;
+		return TX_QUEUE_SUCCESS;
 	} else if (add_result == BLE_MIDI_PACKET_ERROR_PACKET_FULL) {
-        return 1;
+        return TX_QUEUE_NO_TX_PACKETS;
     } 
 
     // Error adding chunk, shouldn't happen. 
     // Signal to the caller that it should be removed from the FIFO.
-    return -1;
+    return TX_QUEUE_INVALID_DATA;
 }
 
-static int add_data_bytes_to_packet(struct tx_queue* queue, const uint8_t* bytes, int byte_count) {
-	return 0;
+// Returns one of:
+// - the number of bytes added
+// - a negative error code
+static int add_data_bytes_to_tx_packet(struct tx_queue* queue, const uint8_t* bytes, int byte_count) {
+	// Add data bytes, to consecutive packets if needed, until all bytes have been added
+	// or we run out of tx packets. 
+	int num_bytes_added = 0;
+	while (num_bytes_added < byte_count) {
+		struct ble_midi_writer_t* tx_packet = tx_queue_last_tx_packet(queue);
+		int add_result = ble_midi_writer_add_sysex_data(tx_packet, &bytes[num_bytes_added], byte_count - num_bytes_added, queue->callbacks.ble_timestamp());
+		if (add_result < 0) {
+			// failed to add data. could be invalid sysex data etc.
+			return TX_QUEUE_INVALID_DATA;
+		}
+		num_bytes_added += add_result;
+		if (num_bytes_added < byte_count) {
+			// we need another packet
+			if (tx_queue_tx_packet_add(queue)) {
+				// no free tx packets.
+				break;
+			}
+		}
+	}
+
+	return num_bytes_added;
 }
 
 // INIT / CLEAR API. 
@@ -138,30 +168,30 @@ void tx_queue_init(struct tx_queue* queue, struct tx_queue_callbacks* callbacks,
 
 // WRITE API. 
 
-enum tx_queue_error tx_queue_set_max_tx_packet_size(struct tx_queue* queue, uint16_t size) {
+enum tx_queue_error tx_queue_fifo_add_tx_packet_size(struct tx_queue* queue, uint16_t size) {
 	uint8_t bytes[3] = { 
 		TX_MAX_PACKET_SIZE_CHUNK_ID, size & 0xff, (size >> 8) & 0xff 
 	};
-	return write_3_byte_chunk(queue, bytes);
+	return write_3_byte_chunk_to_fifo(queue, bytes);
 }
 
-enum tx_queue_error tx_queue_push_msg(struct tx_queue* queue, const uint8_t* bytes) {
-	return write_3_byte_chunk(queue, bytes);
+enum tx_queue_error tx_queue_fifo_add_msg(struct tx_queue* queue, const uint8_t* bytes) {
+	return write_3_byte_chunk_to_fifo(queue, bytes);
 }
 
-enum tx_queue_error tx_queue_push_sysex_start(struct tx_queue* queue) {
+enum tx_queue_error tx_queue_fifo_add_sysex_start(struct tx_queue* queue) {
 	// Store sysex start as three zero padded bytes for simplicity 
 	uint8_t bytes[3] = { SYSEX_START, 0, 0 };
-	return write_3_byte_chunk(queue, bytes);
+	return write_3_byte_chunk_to_fifo(queue, bytes);
 }
 
-enum tx_queue_error tx_queue_push_sysex_end(struct tx_queue* queue) {
+enum tx_queue_error tx_queue_fifo_add_sysex_end(struct tx_queue* queue) {
 	// Store sysex end as three zero padded bytes for simplicity
 	uint8_t bytes[3] = { SYSEX_END, 0, 0 };
-	return write_3_byte_chunk(queue, bytes);
+	return write_3_byte_chunk_to_fifo(queue, bytes);
 }
 
-int tx_queue_push_sysex_data(struct tx_queue* queue, const uint8_t* bytes, int num_bytes) {
+int tx_queue_fifo_add_sysex_data(struct tx_queue* queue, const uint8_t* bytes, int num_bytes) {
 	int fifo_space_left = queue->callbacks.fifo_get_free_space();
 	if (fifo_space_left <= SYSEX_DATA_CHUNK_HEADER_SIZE) {
 		// Not enough room in the FIFO to send at least one data byte. 
@@ -188,10 +218,9 @@ int tx_queue_push_sysex_data(struct tx_queue* queue, const uint8_t* bytes, int n
 		(num_bytes_to_send >> 8) & 0xff, 
 	};
 
+	// TODO: error handling? for example, make sure there is room for a header + at least one byte?
 	int header_write_result = queue->callbacks.fifo_write(chunk_header, SYSEX_DATA_CHUNK_HEADER_SIZE);
 	int data_write_result = queue->callbacks.fifo_write(bytes, num_bytes_to_send);
-
-	// TODO: error handling?
 
 	return num_bytes_to_send;
 }
@@ -200,43 +229,60 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 	uint8_t msg_bytes[3] = { 0, 0, 0};
 
 	while (!queue->callbacks.fifo_is_empty()) {
-		int peek_result = queue->callbacks.fifo_peek(msg_bytes, 3);
-		int first_byte = msg_bytes[0];
-		int add_result = 0;
-		if (first_byte >= 128) {
-			// sysex start, sysex end or non-sysex msg
-			add_result = add_3_byte_chunk_to_packet(queue, msg_bytes); 
-			if (add_result == 0 || add_result < 0) {
-				// printk("added 3 byte chunk %d\n", add_result);
-				queue->callbacks.fifo_read(3);
-			} else {
-				// TODO: no room in any packet. 
-				return 1;
+		if (queue->num_remaining_data_bytes > 0) {
+			int add_result = add_data_bytes_to_tx_packet(queue, &sysex_chunk_scratch_buf[SYSEX_DATA_CHUNK_HEADER_SIZE], queue->num_remaining_data_bytes);
+			// TODO
+		} else {	
+			int chunk_peek_result = queue->callbacks.fifo_peek(msg_bytes, 3);
+			int first_byte = msg_bytes[0];
+			int add_result = 0;
+			if (first_byte == SYSEX_DATA_CHUNK_ID) {
+				// sysex data chunk
+				int byte_count = msg_bytes[1] | (msg_bytes[2] << 8);
+				/*int peek_result = */queue->callbacks.fifo_peek(sysex_chunk_scratch_buf, byte_count + SYSEX_DATA_CHUNK_HEADER_SIZE);
+				add_result = add_data_bytes_to_tx_packet(queue, &sysex_chunk_scratch_buf[SYSEX_DATA_CHUNK_HEADER_SIZE], byte_count);
+				if (add_result == 0) {
+					// zero bytes added, no room in any packet. leave the sysex data chunk in the FIFO
+					return TX_QUEUE_NO_TX_PACKETS;
+				} else if (add_result < 0) {
+					// invalid data. skip this sysex data chunk
+					queue->callbacks.fifo_read(SYSEX_DATA_CHUNK_HEADER_SIZE + byte_count);
+				} else {
+					// 
+					queue->callbacks.fifo_read(SYSEX_DATA_CHUNK_HEADER_SIZE + add_result);
+					int num_bytes_left = byte_count - add_result;
+					queue->num_remaining_data_bytes = num_bytes_left;
+				}
+				// TODO: handle the case where some but not all bytes were added
 			}
-		}
-		else if (first_byte == TX_MAX_PACKET_SIZE_CHUNK_ID) {
-			uint16_t requested_max_size = msg_bytes[1] | (msg_bytes[2] << 8);
-			uint16_t max_size = requested_max_size > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : requested_max_size;
-			for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
-				// TODO: need to handle shrinking?
-    		    queue->tx_packets[i].tx_buf_max_size = max_size;
-    		}
-			queue->callbacks.fifo_read(3);
-		} else if (first_byte == SYSEX_DATA_CHUNK_ID) {
-			// sysex data chunk
-			int byte_count = msg_bytes[1] | (msg_bytes[2] << 8);
-			int peek_result = queue->callbacks.fifo_peek(sysex_chunk_scratch_buf, byte_count + SYSEX_DATA_CHUNK_HEADER_SIZE);
-			add_result = add_data_bytes_to_packet(queue, &sysex_chunk_scratch_buf[SYSEX_DATA_CHUNK_HEADER_SIZE], byte_count);
-			// TODO: handle the case where some but not all bytes were added
+			else if (first_byte >= 128) {
+				// sysex start, sysex end or non-sysex msg
+				add_result = add_3_byte_chunk_to_tx_packet(queue, msg_bytes); 
+				if (add_result == TX_QUEUE_SUCCESS || add_result == TX_QUEUE_INVALID_DATA) {
+					// printk("added 3 byte chunk %d\n", add_result);
+					queue->callbacks.fifo_read(3);
+				} else {
+					return TX_QUEUE_NO_TX_PACKETS;
+				}
+			}
+			else if (first_byte == TX_MAX_PACKET_SIZE_CHUNK_ID) {
+				uint16_t requested_max_size = msg_bytes[1] | (msg_bytes[2] << 8);
+				uint16_t max_size = requested_max_size > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : requested_max_size;
+				for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
+					// TODO: need to handle shrinking?
+					queue->tx_packets[i].tx_buf_max_size = max_size;
+				}
+				queue->callbacks.fifo_read(3);
+			}
 		}
 	}
 
-	return 0;
+	return TX_QUEUE_SUCCESS;
 }
 
-int tx_queue_tx_packet_add(struct tx_queue* queue) {
+enum tx_queue_error tx_queue_tx_packet_add(struct tx_queue* queue) {
     if (queue->tx_packet_count >= BLE_MIDI_TX_QUEUE_PACKET_COUNT) {
-        return 1;
+        return TX_QUEUE_NO_TX_PACKETS;
     }
 
     queue->tx_packet_count++;
@@ -244,24 +290,26 @@ int tx_queue_tx_packet_add(struct tx_queue* queue) {
     struct ble_midi_writer_t* packet = tx_queue_last_tx_packet(queue);
     ble_midi_writer_reset(packet);
 
-    return 0;
+    return TX_QUEUE_SUCCESS;
 }
 
-int tx_queue_on_tx_packet_sent(struct tx_queue* queue) {
+enum tx_queue_error tx_queue_on_tx_packet_sent(struct tx_queue* queue) {
 	struct ble_midi_writer_t* packet_to_pop = tx_queue_first_tx_packet(queue);
 	if (packet_to_pop) {
 		ble_midi_writer_reset(packet_to_pop);
 
 		if (queue->tx_packet_count <= 1) {
+			// popped last packet
 			set_has_tx_data(queue, 0);
-			return 1;
+			return TX_QUEUE_SUCCESS;
 		}
 
 		queue->tx_packet_count--;
 		queue->first_tx_packet_idx = (queue->first_tx_packet_idx + 1) % BLE_MIDI_TX_QUEUE_PACKET_COUNT;
 		
-		return 0;
+		return TX_QUEUE_SUCCESS;
 	}
+	return TX_QUEUE_NO_TX_PACKETS;
 }
 
 struct ble_midi_writer_t* tx_queue_last_tx_packet(struct tx_queue* queue) {

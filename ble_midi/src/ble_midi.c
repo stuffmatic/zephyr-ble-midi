@@ -229,7 +229,7 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	}
 	context.tx_writer.tx_buf_max_size = tx_buf_max_size;
 #else
-	tx_queue_set_max_tx_packet_size(&context.tx_queue, tx_buf_max_size);
+	tx_queue_fifo_add_tx_packet_size(&context.tx_queue, tx_buf_max_size);
 	atomic_inc(&context.pending_tx_queue_fifo_work_count);
 	int submit_result = k_work_submit(&tx_queue_fifo_work); // TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
 #endif
@@ -329,7 +329,7 @@ enum ble_midi_error_t ble_midi_tx_msg(uint8_t *bytes)
 	ble_midi_writer_add_msg(&context.tx_writer, bytes, timestamp_ms());
 	return send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
 #else
-	int push_result = tx_queue_push_msg(&context.tx_queue, bytes); // TODO: check error
+	int push_result = tx_queue_fifo_add_msg(&context.tx_queue, bytes); // TODO: check error
 
 	/* ... and submit a work item for adding the message to the next outgoing packet. */
 
