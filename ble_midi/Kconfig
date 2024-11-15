@@ -21,6 +21,14 @@ config BLE_MIDI_CONN_EVENT_NOTIFICATION_DISTANCE_US
   int "Prepare and submit BLE packets for transmission this many μs before each connection event. Used when BLE_MIDI_TX_MODE_CONN_EVENT is enabled."
   default 1200
 
+config BLE_MIDI_TX_QUEUE_PACKET_COUNT
+  int ""
+  default 1
+
+config BLE_MIDI_TX_FIFO_SIZE
+  int ""
+  default 256
+
 choice BLE_MIDI_TX_MODE
     bool "Determines how transmission of BLE packets is triggered"
     default BLE_MIDI_TX_MODE_SINGLE_MSG

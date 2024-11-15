@@ -80,9 +80,8 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service, BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SE
 /********* Buffered tx stuff **********/
 
 #ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
-#define TX_QUEUE_FIFO_SIZE 1024
 atomic_t has_tx_data = ATOMIC_INIT(0x00);
-RING_BUF_DECLARE(tx_queue_fifo, TX_QUEUE_FIFO_SIZE);
+RING_BUF_DECLARE(tx_queue_fifo, CONFIG_BLE_MIDI_TX_FIFO_SIZE);
 
 int fifo_peek(uint8_t *bytes, int num_bytes) {
     return ring_buf_peek(&tx_queue_fifo, bytes, num_bytes);
