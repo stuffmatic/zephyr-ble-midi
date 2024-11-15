@@ -44,6 +44,7 @@ struct tx_queue {
 	// Used to keep track of how many additional sysex data bytes to read from the
 	// FIFO in case the packet queue got filled up with a partial sysex message
 	int num_remaining_data_bytes;
+	int curr_sysex_data_chunk_size;
 };
 
 // INIT / CLEAR API. 
@@ -81,10 +82,10 @@ enum tx_queue_error tx_queue_tx_packet_add(struct tx_queue* queue);
  */
 enum tx_queue_error tx_queue_on_tx_packet_sent(struct tx_queue* queue);
 
-/* The first BLE MIDI tx packet in the queue */
+/* The first BLE MIDI tx packet in the queue. Returns null if there is no data. */
 struct ble_midi_writer_t* tx_queue_first_tx_packet(struct tx_queue* queue);
 
-/* The last BLE MIDI tx packet in the queue */
+/* The last BLE MIDI tx packet in the queue. */
 struct ble_midi_writer_t* tx_queue_last_tx_packet(struct tx_queue* queue);
 
 #endif // BLE_MIDI_TX_QUEUE_H

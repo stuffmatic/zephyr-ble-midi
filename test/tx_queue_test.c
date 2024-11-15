@@ -12,7 +12,7 @@ void assert_eq(int a, int b, const char* message) {
     assert(a == b && message);
 }
 
-// Quick and dirty FIFO implementation for testing, just using an array copying data around
+// Quick and dirty FIFO implementation for testing, just using an array and copying data around
 #define FIFO_MAX_CAPACITY 1024
 struct fifo {
     uint8_t bytes[FIFO_MAX_CAPACITY];
@@ -110,7 +110,7 @@ void init_test_queue(struct tx_queue* queue, int max_packet_size, int fifo_capac
     assert_true(queue->tx_packets->tx_buf_max_size == max_packet_size, "TX packet size should be set");
 }
 
-static enum tx_queue_error add_note_on(struct tx_queue* queue) {
+static enum tx_queue_error add_note_on_to_fifo(struct tx_queue* queue) {
     uint8_t bytes[3] = {
         0x90,
         0x60,
@@ -133,15 +133,15 @@ static void test_non_sysex_msgs() {
     assert_true(queue.tx_packet_count == 1, "Expected new queue to have one active tx packet");
 
     // Push a note on message ...
-    add_note_on(&queue);
+    add_note_on_to_fifo(&queue);
     // ... and read it from the FIFO 
     tx_queue_read_from_fifo(&queue);
     assert_true(queue.has_tx_data, "Queue should have data");
     assert_true(queue.tx_packet_count == 1, "Queue should have one packet");
 
     // Push two more note on message ...
-    add_note_on(&queue);
-    add_note_on(&queue);
+    add_note_on_to_fifo(&queue);
+    add_note_on_to_fifo(&queue);
     // ... and read them from the FIFO 
     tx_queue_read_from_fifo(&queue);
     assert_true(queue.has_tx_data, "Queue should have data");
@@ -161,7 +161,37 @@ static void test_non_sysex_msgs() {
     // Mark second packet as sent
     tx_queue_on_tx_packet_sent(&queue);
     assert_true(queue.tx_packet_count == 1 && !queue.has_tx_data, "Queue should have one packet and no data");
-    
+}
+
+static void test_continued_non_sysex_msgs() {
+    // Create and initialize the queue
+    struct tx_queue queue;
+    int tx_packet_size = 10; // one packet can hold 2 note on messages
+    int fifo_size = 298; // fifo can hold 99 note on messages
+    init_test_queue(&queue, tx_packet_size, fifo_size);
+
+    // Fill the FIFO with note on messages
+    while (1) {
+        int add_result = add_note_on_to_fifo(&queue);
+        if (add_result == TX_QUEUE_FIFO_FULL) {
+            break;
+        }
+    }
+    assert_eq(fifo.num_bytes, 3 * 99, "FIFO should contain 297 bytes");
+
+    // read as much fifo data as possible into tx packets
+    tx_queue_read_from_fifo(&queue);
+    // check that the fifo size decreased accordingly
+    int expected_processed_msg_count = BLE_MIDI_TX_QUEUE_PACKET_COUNT * 2;
+    assert_eq(fifo.num_bytes, 3 * 99 - expected_processed_msg_count * 3, "");
+
+    // repeatedly "send" the first tx packet and then read new data from the fifo
+    for (int i = 0; i < 45; i++) {
+        assert_eq(tx_queue_on_tx_packet_sent(&queue), TX_QUEUE_SUCCESS, "There should be a pending tx packet");
+        tx_queue_read_from_fifo(&queue);
+    }
+
+    assert_eq(fifo.num_bytes, 3, "There should be one message left in the FIFO");
 }
 
 static void test_full_fifo() {
@@ -170,10 +200,10 @@ static void test_full_fifo() {
     struct tx_queue queue;
     init_test_queue(&queue, 64, fifo_capacity);
 
-    assert_eq(add_note_on(&queue), TX_QUEUE_SUCCESS, "message should fit in FIFO");
-    assert_eq(add_note_on(&queue), TX_QUEUE_SUCCESS, "message should fit in FIFO");
+    assert_eq(add_note_on_to_fifo(&queue), TX_QUEUE_SUCCESS, "message should fit in FIFO");
+    assert_eq(add_note_on_to_fifo(&queue), TX_QUEUE_SUCCESS, "message should fit in FIFO");
     int fifo_size_before_failed_add = fifo.num_bytes;
-    assert_eq(add_note_on(&queue), TX_QUEUE_FIFO_FULL, "message should not fit in FIFO");
+    assert_eq(add_note_on_to_fifo(&queue), TX_QUEUE_FIFO_FULL, "message should not fit in FIFO");
     assert_eq(fifo_size_before_failed_add, fifo.num_bytes, "Failed note on add should not grow FIFO");
 
     tx_queue_read_from_fifo(&queue);
@@ -191,7 +221,7 @@ static void test_full_packet_queue() {
     // Add enough note on messages to the FIFO to fill the tx packets with two messages left over
     int num_msgs_to_add = max_num_tx_packets * 2 + 2;
     for (int i = 0; i < num_msgs_to_add; i++) {
-        add_note_on(&queue);
+        add_note_on_to_fifo(&queue);
     }
     // Read messages from FIFO
     tx_queue_read_from_fifo(&queue);
@@ -240,8 +270,9 @@ static void test_continued_multi_packet_sysex() {
     struct tx_queue queue;
     init_test_queue(&queue, tx_packet_size, fifo_capacity);
 
-    // Add a sysex message that is too large to fit into all tx packets
-    uint8_t sysex_data_bytes[200];
+    // Add sysex message to the FIFO that is large enough to fit
+    // in the FIFO but too large to fit to fit into all tx packets
+    uint8_t sysex_data_bytes[2000];
     int sysex_data_byte_count = sizeof(sysex_data_bytes);
     for (int i = 0; i < sysex_data_byte_count; i++) {
         sysex_data_bytes[i] = i % 16;
@@ -251,8 +282,19 @@ static void test_continued_multi_packet_sysex() {
     tx_queue_fifo_add_sysex_data(&queue, sysex_data_bytes, sysex_data_byte_count);
     tx_queue_fifo_add_sysex_end(&queue);
 
+    // fill tx packets
     tx_queue_read_from_fifo(&queue);
-    int a = 0;
+    assert_eq(queue.tx_packet_count, BLE_MIDI_TX_QUEUE_PACKET_COUNT, "All tx packets should be used");
+    for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
+        struct ble_midi_writer_t* packet = &queue.tx_packets[i];
+        assert_eq(packet->tx_buf_size, packet->tx_buf_max_size, "packet should be full");
+    }
+    // "send" tx packets
+    while (queue.has_tx_data) {
+        tx_queue_on_tx_packet_sent(&queue);
+    }
+    // fill tx packets
+    tx_queue_read_from_fifo(&queue);
 }
 
 int main(int argc, char *argv[])
@@ -263,6 +305,8 @@ int main(int argc, char *argv[])
     test_full_packet_queue();
     test_multi_packet_sysex();
     test_continued_multi_packet_sysex();
+
+    // test_invalid_sysex_data()
 
     return 0;
 }

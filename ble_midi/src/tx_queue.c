@@ -127,6 +127,7 @@ static int add_data_bytes_to_tx_packet(struct tx_queue* queue, const uint8_t* by
 // INIT / CLEAR API. 
 void tx_queue_reset(struct tx_queue* queue) {
 	queue->num_remaining_data_bytes = 0;
+	queue->curr_sysex_data_chunk_size = 0;
 	queue->first_tx_packet_idx = 0;
 	queue->tx_packet_count = 1;
 	if (queue->callbacks.fifo_clear) {
@@ -230,30 +231,48 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 
 	while (!queue->callbacks.fifo_is_empty()) {
 		if (queue->num_remaining_data_bytes > 0) {
-			int add_result = add_data_bytes_to_tx_packet(queue, &sysex_chunk_scratch_buf[SYSEX_DATA_CHUNK_HEADER_SIZE], queue->num_remaining_data_bytes);
-			// TODO
-		} else {	
+			int sysex_chunk_read_pos = queue->curr_sysex_data_chunk_size - queue->num_remaining_data_bytes;
+			int add_result = add_data_bytes_to_tx_packet(queue, &sysex_chunk_scratch_buf[sysex_chunk_read_pos], queue->num_remaining_data_bytes);
+			if (add_result == 0) {
+				// zero bytes added, no room in any packet
+				return TX_QUEUE_NO_TX_PACKETS;
+			} else if (add_result < 0) {
+				// invalid data, skip bytes
+				// queue->callbacks.fifo_read()
+				// TODO: handle this
+
+			} else {
+				queue->num_remaining_data_bytes -= add_result;
+			}
+		} else {
+			// peek the first bytes of the chunk.
 			int chunk_peek_result = queue->callbacks.fifo_peek(msg_bytes, 3);
 			int first_byte = msg_bytes[0];
 			int add_result = 0;
 			if (first_byte == SYSEX_DATA_CHUNK_ID) {
-				// sysex data chunk
-				int byte_count = msg_bytes[1] | (msg_bytes[2] << 8);
-				/*int peek_result = */queue->callbacks.fifo_peek(sysex_chunk_scratch_buf, byte_count + SYSEX_DATA_CHUNK_HEADER_SIZE);
-				add_result = add_data_bytes_to_tx_packet(queue, &sysex_chunk_scratch_buf[SYSEX_DATA_CHUNK_HEADER_SIZE], byte_count);
+				// this is sysex data chunk, get the total number of data bytes in the chunk
+				int sysex_data_byte_count = msg_bytes[1] | (msg_bytes[2] << 8);
+				int sysex_data_chunk_size = SYSEX_DATA_CHUNK_HEADER_SIZE + sysex_data_byte_count;
+				// read the chunk into the scratch buffer (which may be too small to hold all data)
+				int num_peeked_bytes = queue->callbacks.fifo_peek(sysex_chunk_scratch_buf, sysex_data_chunk_size);
+				int num_data_bytes_to_add = num_peeked_bytes - SYSEX_DATA_CHUNK_HEADER_SIZE;
+				// try adding scratch buffer contents to an available tx packet
+				add_result = add_data_bytes_to_tx_packet(queue, &sysex_chunk_scratch_buf[SYSEX_DATA_CHUNK_HEADER_SIZE], num_data_bytes_to_add);
 				if (add_result == 0) {
 					// zero bytes added, no room in any packet. leave the sysex data chunk in the FIFO
 					return TX_QUEUE_NO_TX_PACKETS;
 				} else if (add_result < 0) {
 					// invalid data. skip this sysex data chunk
-					queue->callbacks.fifo_read(SYSEX_DATA_CHUNK_HEADER_SIZE + byte_count);
+					queue->callbacks.fifo_read(sysex_data_chunk_size);
 				} else {
-					// 
-					queue->callbacks.fifo_read(SYSEX_DATA_CHUNK_HEADER_SIZE + add_result);
-					int num_bytes_left = byte_count - add_result;
-					queue->num_remaining_data_bytes = num_bytes_left;
+					// data bytes were successfully added to a tx packet, remove corresponding
+					// bytes from the FIFO
+					int num_added_bytes = add_result;
+					queue->callbacks.fifo_read(SYSEX_DATA_CHUNK_HEADER_SIZE + num_added_bytes);
+					// compute the number of bytes to process in the chunk.
+					queue->num_remaining_data_bytes = sysex_data_byte_count - num_added_bytes;
+					queue->curr_sysex_data_chunk_size = sysex_data_chunk_size;
 				}
-				// TODO: handle the case where some but not all bytes were added
 			}
 			else if (first_byte >= 128) {
 				// sysex start, sysex end or non-sysex msg
