@@ -17,6 +17,7 @@ void ble_midi_context_reset(struct ble_midi_context* context, int tx_running_sta
 	ble_midi_writer_init(&context->tx_writer, tx_running_status, tx_note_off_as_note_on);
     #else
     atomic_set(&context->pending_tx_queue_fifo_work_count, 0);
+    // TODO: should this be reset instead?
     tx_queue_init(&context->tx_queue, NULL, tx_running_status, tx_note_off_as_note_on);
     #endif
 }

@@ -132,6 +132,9 @@ static struct tx_queue_callbacks tx_queue_callbacks = {
 /* A work item handler for sending the contents of pending tx packets */
 static void tx_pending_packets_work_cb(struct k_work *w)
 {
+	// Read any pending FIFO messages.
+	tx_queue_read_from_fifo(&context.tx_queue);
+	
 	// Attempt to send pending BLE MIDI tx packets, 
 	// stopping if the BLE stack buffer queue is full.
 	struct ble_midi_writer_t* packet = tx_queue_first_tx_packet(&context.tx_queue);
@@ -173,10 +176,17 @@ static void tx_queue_fifo_work_cb(struct k_work *w)
 	int unfinished_work_count = atomic_get(&context.pending_tx_queue_fifo_work_count);
 
 	if (unfinished_work_count > 1) {
-		// There are more midi_msg_work items waiting. Resubmit.
+		// There are more work items waiting. Resubmit.
 		int submit_result = k_work_submit(&tx_queue_fifo_work);
 	}
 	atomic_dec(&context.pending_tx_queue_fifo_work_count);
+}
+
+static void submit_tx_queue_fifo_work() {
+	/* ... and submit a work item for adding the message to the next outgoing packet. */
+	// TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
+	atomic_inc(&context.pending_tx_queue_fifo_work_count);
+	int submit_result = k_work_submit(&tx_queue_fifo_work); 
 }
 
 #endif /* CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT */
@@ -230,8 +240,7 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	context.tx_writer.tx_buf_max_size = tx_buf_max_size;
 #else
 	tx_queue_fifo_add_tx_packet_size(&context.tx_queue, tx_buf_max_size);
-	atomic_inc(&context.pending_tx_queue_fifo_work_count);
-	int submit_result = k_work_submit(&tx_queue_fifo_work); // TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
+	submit_tx_queue_fifo_work();
 #endif
 
 	LOG_INF("MTU updated: tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
@@ -311,7 +320,6 @@ enum ble_midi_error_t ble_midi_init(struct ble_midi_callbacks *callbacks)
 	context.user_callbacks.sysex_data_cb = callbacks->sysex_data_cb;
 	context.user_callbacks.sysex_end_cb = callbacks->sysex_end_cb;
 
-	
 #ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 	tx_queue_set_callbacks(&context.tx_queue, &tx_queue_callbacks);
 	conn_event_trigger_init(radio_notif_handler); // TODO: return error
@@ -329,12 +337,11 @@ enum ble_midi_error_t ble_midi_tx_msg(uint8_t *bytes)
 	ble_midi_writer_add_msg(&context.tx_writer, bytes, timestamp_ms());
 	return send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
 #else
-	int push_result = tx_queue_fifo_add_msg(&context.tx_queue, bytes); // TODO: check error
-
-	/* ... and submit a work item for adding the message to the next outgoing packet. */
-
-	atomic_inc(&context.pending_tx_queue_fifo_work_count);
-	int submit_result = k_work_submit(&tx_queue_fifo_work); // TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
+	int add_result = tx_queue_fifo_add_msg(&context.tx_queue, bytes);
+	if (add_result == TX_QUEUE_SUCCESS) {
+		submit_tx_queue_fifo_work();
+	}
+	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_FIFO_FULL;
 #endif
 	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
@@ -346,9 +353,12 @@ enum ble_midi_error_t ble_midi_tx_sysex_start()
 	ble_midi_writer_start_sysex_msg(&context.tx_writer, timestamp_ms());
 	return send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
 #else
-	// TODO
+	int add_result = tx_queue_fifo_add_sysex_start(&context.tx_queue); 
+	if (add_result == TX_QUEUE_SUCCESS) {
+		submit_tx_queue_fifo_work();
+	}
+	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_FIFO_FULL;
 #endif
-	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
 enum ble_midi_error_t ble_midi_tx_sysex_end()
@@ -358,12 +368,15 @@ enum ble_midi_error_t ble_midi_tx_sysex_end()
 	ble_midi_writer_end_sysex_msg(&context.tx_writer, timestamp_ms());
 	return send_packet(context.tx_writer.tx_buf, context.tx_writer.tx_buf_size);
 #else
-	// TODO
+	int add_result = tx_queue_fifo_add_sysex_end(&context.tx_queue);
+	if (add_result == TX_QUEUE_SUCCESS) {
+		submit_tx_queue_fifo_work();
+	}
+	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_FIFO_FULL;
 #endif
-	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
-enum ble_midi_error_t ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
+int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
 {
 #ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 	ble_midi_writer_reset(&context.tx_writer);
@@ -380,7 +393,11 @@ enum ble_midi_error_t ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
 	}
 	return BLE_MIDI_SUCCESS; // TODO: report errors
 #else
-	// TODO
+	int add_result = tx_queue_fifo_add_sysex_data(&context.tx_queue, bytes, num_bytes);
+	if (add_result > 0) {
+		submit_tx_queue_fifo_work();
+	}
+	return add_result > 0 ? add_result : BLE_MIDI_FIFO_FULL;
 #endif
 }
 

@@ -182,7 +182,7 @@ static void test_continued_non_sysex_msgs() {
     // read as much fifo data as possible into tx packets
     tx_queue_read_from_fifo(&queue);
     // check that the fifo size decreased accordingly
-    int expected_processed_msg_count = BLE_MIDI_TX_QUEUE_PACKET_COUNT * 2;
+    int expected_processed_msg_count = TX_QUEUE_PACKET_COUNT * 2;
     assert_eq(fifo.num_bytes, 3 * 99 - expected_processed_msg_count * 3, "");
 
     // repeatedly "send" the first tx packet and then read new data from the fifo
@@ -214,7 +214,7 @@ static void test_full_packet_queue() {
     // Choose a packet size so that two note on messages fit in each packet
     int tx_packet_size = 10; 
     int fifo_capacity = 128;
-    int max_num_tx_packets = BLE_MIDI_TX_QUEUE_PACKET_COUNT;
+    int max_num_tx_packets = TX_QUEUE_PACKET_COUNT;
     struct tx_queue queue;
     init_test_queue(&queue, tx_packet_size, fifo_capacity);
 
@@ -284,8 +284,8 @@ static void test_continued_multi_packet_sysex() {
 
     // fill tx packets
     tx_queue_read_from_fifo(&queue);
-    assert_eq(queue.tx_packet_count, BLE_MIDI_TX_QUEUE_PACKET_COUNT, "All tx packets should be used");
-    for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
+    assert_eq(queue.tx_packet_count, TX_QUEUE_PACKET_COUNT, "All tx packets should be used");
+    for (int i = 0; i < TX_QUEUE_PACKET_COUNT; i++) {
         struct ble_midi_writer_t* packet = &queue.tx_packets[i];
         assert_eq(packet->tx_buf_size, packet->tx_buf_max_size, "packet should be full");
     }

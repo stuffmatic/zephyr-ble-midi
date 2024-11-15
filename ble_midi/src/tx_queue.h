@@ -4,10 +4,10 @@
 #include <stdint.h>
 #include "ble_midi_packet.h"
 
-#ifdef CONFIG_BLE_MIDI_TX_QUEUE_PACKET_COUNT
-#define BLE_MIDI_TX_QUEUE_PACKET_COUNT CONFIG_BLE_MIDI_TX_QUEUE_PACKET_COUNT
+#ifdef CONFIG_TX_QUEUE_PACKET_COUNT
+#define TX_QUEUE_PACKET_COUNT CONFIG_TX_QUEUE_PACKET_COUNT
 #else
-#define BLE_MIDI_TX_QUEUE_PACKET_COUNT 4
+#define TX_QUEUE_PACKET_COUNT 4
 #endif
 
 enum tx_queue_error {
@@ -37,7 +37,7 @@ struct tx_queue_callbacks {
 
 struct tx_queue {
 	struct tx_queue_callbacks callbacks;
-	struct ble_midi_writer_t tx_packets[BLE_MIDI_TX_QUEUE_PACKET_COUNT];
+	struct ble_midi_writer_t tx_packets[TX_QUEUE_PACKET_COUNT];
 	int first_tx_packet_idx;
 	int tx_packet_count;
 	int has_tx_data;

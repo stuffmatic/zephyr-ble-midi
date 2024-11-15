@@ -10,8 +10,8 @@
 
 enum ble_midi_error_t {
 	BLE_MIDI_SUCCESS = 0,
-	BLE_MIDI_ALREADY_INITIALIZED,
-	
+	BLE_MIDI_ALREADY_INITIALIZED = -100,
+	BLE_MIDI_FIFO_FULL = -101
 };
 
 typedef enum  {
@@ -68,9 +68,9 @@ enum ble_midi_error_t ble_midi_tx_sysex_start();
  * Transmit sysex data bytes.
  * @param bytes The data bytes to send. Must have the high bit set to 0.
  * @param num_bytes The number of data bytes to send.
- * @return On success, the number of bytes written. A negative number on error.
+ * @return On success, the number of bytes written. A negative ble_midi_error_t value on error.
  */
-enum ble_midi_error_t ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes);
+int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes);
 
 /**
  * End transmission of a sysex message.

@@ -121,6 +121,10 @@ static int add_data_bytes_to_tx_packet(struct tx_queue* queue, const uint8_t* by
 		}
 	}
 
+	if (num_bytes_added > 0) {
+		set_has_tx_data(queue, 1);
+	}
+
 	return num_bytes_added;
 }
 
@@ -136,7 +140,7 @@ void tx_queue_reset(struct tx_queue* queue) {
 
 	set_has_tx_data(queue, 0);
     
-    for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
+    for (int i = 0; i < TX_QUEUE_PACKET_COUNT; i++) {
         ble_midi_writer_reset(&queue->tx_packets[i]);
 		// Also reset buffer max size.
 		queue->tx_packets[i].tx_buf_max_size = 0;
@@ -159,7 +163,7 @@ void tx_queue_set_callbacks(struct tx_queue* queue, struct tx_queue_callbacks* c
 void tx_queue_init(struct tx_queue* queue, struct tx_queue_callbacks* callbacks, int running_status_enabled, int note_off_as_note_on) {
 	tx_queue_set_callbacks(queue, callbacks);
 
-	for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
+	for (int i = 0; i < TX_QUEUE_PACKET_COUNT; i++) {
         ble_midi_writer_init(&queue->tx_packets[i], running_status_enabled, note_off_as_note_on);
     }
 
@@ -196,8 +200,7 @@ int tx_queue_fifo_add_sysex_data(struct tx_queue* queue, const uint8_t* bytes, i
 	int fifo_space_left = queue->callbacks.fifo_get_free_space();
 	if (fifo_space_left <= SYSEX_DATA_CHUNK_HEADER_SIZE) {
 		// Not enough room in the FIFO to send at least one data byte. 
-		// Tell the caller 0 bytes were added.
-		return 0;
+		return TX_QUEUE_FIFO_FULL;
 	}
 
 	// If we made it here, there's room for at least one data byte.
@@ -219,11 +222,10 @@ int tx_queue_fifo_add_sysex_data(struct tx_queue* queue, const uint8_t* bytes, i
 		(num_bytes_to_send >> 8) & 0xff, 
 	};
 
-	// TODO: error handling? for example, make sure there is room for a header + at least one byte?
 	int header_write_result = queue->callbacks.fifo_write(chunk_header, SYSEX_DATA_CHUNK_HEADER_SIZE);
 	int data_write_result = queue->callbacks.fifo_write(bytes, num_bytes_to_send);
 
-	return num_bytes_to_send;
+	return data_write_result;
 }
 
 int tx_queue_read_from_fifo(struct tx_queue* queue) {
@@ -240,7 +242,6 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 				// invalid data, skip bytes
 				// queue->callbacks.fifo_read()
 				// TODO: handle this
-
 			} else {
 				queue->num_remaining_data_bytes -= add_result;
 			}
@@ -287,7 +288,7 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 			else if (first_byte == TX_MAX_PACKET_SIZE_CHUNK_ID) {
 				uint16_t requested_max_size = msg_bytes[1] | (msg_bytes[2] << 8);
 				uint16_t max_size = requested_max_size > BLE_MIDI_TX_PACKET_MAX_SIZE ? BLE_MIDI_TX_PACKET_MAX_SIZE : requested_max_size;
-				for (int i = 0; i < BLE_MIDI_TX_QUEUE_PACKET_COUNT; i++) {
+				for (int i = 0; i < TX_QUEUE_PACKET_COUNT; i++) {
 					// TODO: need to handle shrinking?
 					queue->tx_packets[i].tx_buf_max_size = max_size;
 				}
@@ -300,7 +301,7 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 }
 
 enum tx_queue_error tx_queue_tx_packet_add(struct tx_queue* queue) {
-    if (queue->tx_packet_count >= BLE_MIDI_TX_QUEUE_PACKET_COUNT) {
+    if (queue->tx_packet_count >= TX_QUEUE_PACKET_COUNT) {
         return TX_QUEUE_NO_TX_PACKETS;
     }
 
@@ -324,7 +325,7 @@ enum tx_queue_error tx_queue_on_tx_packet_sent(struct tx_queue* queue) {
 		}
 
 		queue->tx_packet_count--;
-		queue->first_tx_packet_idx = (queue->first_tx_packet_idx + 1) % BLE_MIDI_TX_QUEUE_PACKET_COUNT;
+		queue->first_tx_packet_idx = (queue->first_tx_packet_idx + 1) % TX_QUEUE_PACKET_COUNT;
 		
 		return TX_QUEUE_SUCCESS;
 	}
@@ -332,7 +333,7 @@ enum tx_queue_error tx_queue_on_tx_packet_sent(struct tx_queue* queue) {
 }
 
 struct ble_midi_writer_t* tx_queue_last_tx_packet(struct tx_queue* queue) {
-    int tx_packet_idx = (queue->first_tx_packet_idx + queue->tx_packet_count - 1) % BLE_MIDI_TX_QUEUE_PACKET_COUNT;
+    int tx_packet_idx = (queue->first_tx_packet_idx + queue->tx_packet_count - 1) % TX_QUEUE_PACKET_COUNT;
     return &queue->tx_packets[tx_packet_idx];
 }
 
