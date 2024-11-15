@@ -271,7 +271,7 @@ static void test_continued_multi_packet_sysex() {
     init_test_queue(&queue, tx_packet_size, fifo_capacity);
 
     // Add sysex message to the FIFO that is large enough to fit
-    // in the FIFO but too large to fit to fit into all tx packets
+    // in the FIFO but too large to fit into all available tx packets
     uint8_t sysex_data_bytes[2000];
     int sysex_data_byte_count = sizeof(sysex_data_bytes);
     for (int i = 0; i < sysex_data_byte_count; i++) {
@@ -297,6 +297,38 @@ static void test_continued_multi_packet_sysex() {
     tx_queue_read_from_fifo(&queue);
 }
 
+static void test_invalid_sysex_data() {
+    int tx_packet_size = 64; 
+    int fifo_capacity = 256;
+    struct tx_queue queue;
+    init_test_queue(&queue, tx_packet_size, fifo_capacity);
+    
+    uint8_t sysex_data_bytes[4];
+    int sysex_data_byte_count = sizeof(sysex_data_bytes);
+
+    // start sysex
+    tx_queue_fifo_add_sysex_start(&queue);
+
+    // add valid sysex bytes
+    for (int i = 0; i < sysex_data_byte_count; i++) {
+        sysex_data_bytes[i] = i % 16;
+    }
+    tx_queue_fifo_add_sysex_data(&queue, sysex_data_bytes, sysex_data_byte_count);
+
+    // add invalid sysex bytes, should be discarded
+    for (int i = 0; i < sysex_data_byte_count; i++) {
+        sysex_data_bytes[i] = 128 + (i % 16);
+    }
+    tx_queue_fifo_add_sysex_data(&queue, sysex_data_bytes, sysex_data_byte_count);
+
+    // end sysex
+    tx_queue_fifo_add_sysex_end(&queue);
+
+    tx_queue_read_from_fifo(&queue);
+    assert_eq(queue.tx_packets[0].tx_buf_size, 9, "invalid sysex bytes should be discarded");
+
+}
+
 int main(int argc, char *argv[])
 {
     test_non_sysex_msgs();
@@ -305,8 +337,7 @@ int main(int argc, char *argv[])
     test_full_packet_queue();
     test_multi_packet_sysex();
     test_continued_multi_packet_sysex();
-
-    // test_invalid_sysex_data()
+    test_invalid_sysex_data();
 
     return 0;
 }
