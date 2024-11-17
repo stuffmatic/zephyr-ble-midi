@@ -81,6 +81,7 @@ BT_GATT_SERVICE_DEFINE(ble_midi_service, BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SE
 
 #ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 atomic_t has_tx_data = ATOMIC_INIT(0x00);
+atomic_t waiting_for_notif_buf = ATOMIC_INIT(0x00);
 RING_BUF_DECLARE(tx_queue_fifo, CONFIG_BLE_MIDI_TX_FIFO_SIZE);
 
 int fifo_peek(uint8_t *bytes, int num_bytes) {
@@ -144,9 +145,11 @@ static void tx_pending_packets_work_cb(struct k_work *w)
 		} 
 		else if (send_result == -ENOMEM) {
 			// BLE stack buffer queue is full. Retry this packet later
+			atomic_set_bit(&waiting_for_notif_buf, 0);
 			break;
 		} else {
 			// Something else went wrong.
+			LOG_ERR("send_packet returned %d", send_result);
 			break; // TODO: is this the right thing to do?
 		}
 		packet = tx_queue_first_tx_packet(&context.tx_queue);
@@ -158,7 +161,10 @@ K_WORK_DEFINE(tx_pending_packets_work, tx_pending_packets_work_cb);
 static void radio_notif_handler(void)
 {
 	/* If there is data to send, submit a work item to send it. */
-	if (atomic_test_bit(&has_tx_data, 0)) {
+	int has_fifo_data = !ring_buf_is_empty(&tx_queue_fifo);
+	int has_ble_tx_packets = atomic_test_bit(&has_tx_data, 0);
+	int waiting_for_notify_buffers = atomic_test_bit(&waiting_for_notif_buf, 0);
+	if (!waiting_for_notify_buffers && (has_ble_tx_packets || has_fifo_data)) {
 		k_work_submit(&tx_pending_packets_work);
 	}
 }
@@ -192,6 +198,8 @@ static void submit_tx_queue_fifo_work() {
 
 static void on_notify_done(struct bt_conn *conn, void *user_data)
 {
+	atomic_clear_bit(&waiting_for_notif_buf, 0);
+
 	if (context.user_callbacks.tx_done_cb) {
 		context.user_callbacks.tx_done_cb();
 	}
