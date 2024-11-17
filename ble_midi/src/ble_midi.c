@@ -377,6 +377,10 @@ enum ble_midi_error_t ble_midi_tx_sysex_end()
 
 int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
 {
+	if (num_bytes <= 0) {
+		return BLE_MIDI_INVALID_ARGUMENT;
+	}
+	
 #ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 	ble_midi_writer_reset(&context.tx_writer);
 	int add_result =

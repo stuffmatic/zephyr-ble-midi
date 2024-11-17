@@ -11,7 +11,8 @@
 enum ble_midi_error_t {
 	BLE_MIDI_SUCCESS = 0,
 	BLE_MIDI_ALREADY_INITIALIZED = -100,
-	BLE_MIDI_FIFO_FULL = -101
+	BLE_MIDI_FIFO_FULL = -101,
+	BLE_MIDI_INVALID_ARGUMENT = -102
 };
 
 typedef enum  {
