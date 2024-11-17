@@ -254,6 +254,7 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 				// this is sysex data chunk, get the total number of data bytes in the chunk
 				int sysex_data_byte_count = msg_bytes[1] | (msg_bytes[2] << 8);
 				int sysex_data_chunk_size = SYSEX_DATA_CHUNK_HEADER_SIZE + sysex_data_byte_count;
+				
 				// read the chunk into the scratch buffer (which may be too small to hold all data)
 				int num_peeked_bytes = queue->callbacks.fifo_peek(sysex_chunk_scratch_buf, sysex_data_chunk_size);
 				int num_data_bytes_to_add = num_peeked_bytes - SYSEX_DATA_CHUNK_HEADER_SIZE;
@@ -266,10 +267,8 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 					// invalid data. skip this sysex data chunk
 					queue->callbacks.fifo_read(sysex_data_chunk_size);
 				} else {
-					// data bytes were successfully added to a tx packet, remove corresponding
-					// bytes from the FIFO
-					int num_added_bytes = add_result;
-					queue->callbacks.fifo_read(SYSEX_DATA_CHUNK_HEADER_SIZE + num_added_bytes);
+					queue->callbacks.fifo_read(sysex_data_chunk_size);
+					int num_added_bytes = add_result;					
 					// compute the number of bytes to process in the chunk.
 					queue->num_remaining_data_bytes = sysex_data_byte_count - num_added_bytes;
 					queue->curr_sysex_data_chunk_size = sysex_data_chunk_size;
@@ -279,7 +278,6 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 				// sysex start, sysex end or non-sysex msg
 				add_result = add_3_byte_chunk_to_tx_packet(queue, msg_bytes); 
 				if (add_result == TX_QUEUE_SUCCESS || add_result == TX_QUEUE_INVALID_DATA) {
-					// printk("added 3 byte chunk %d\n", add_result);
 					queue->callbacks.fifo_read(3);
 				} else {
 					return TX_QUEUE_NO_TX_PACKETS;
