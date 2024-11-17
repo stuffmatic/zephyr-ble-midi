@@ -12,7 +12,6 @@
 LOG_MODULE_REGISTER(ble_midi, CONFIG_BLE_MIDI_LOG_LEVEL);
 
 #ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
-#include <zephyr/init.h>
 #include <zephyr/sys/ring_buffer.h>
 #endif /* !CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG */
 
@@ -198,7 +197,9 @@ static void submit_tx_queue_fifo_work() {
 
 static void on_notify_done(struct bt_conn *conn, void *user_data)
 {
+#ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 	atomic_clear_bit(&waiting_for_notif_buf, 0);
+#endif
 
 	if (context.user_callbacks.tx_done_cb) {
 		context.user_callbacks.tx_done_cb();
@@ -213,8 +214,8 @@ int send_packet(uint8_t *bytes, int num_bytes)
 		.len = num_bytes,
 		.func = on_notify_done,
 	};
-	int rc = bt_gatt_notify_cb(NULL, &notify_params);
-	return rc == -ENOTCONN ? 0 : rc; // TODO: what does this do? ignores failures if not connected?
+	return bt_gatt_notify_cb(NULL, &notify_params);
+	// return rc == -ENOTCONN ? 0 : rc; // TODO: what does this do? ignores failures if not connected?
 }
 
 #define INTERVAL_MIN 0x6 /* 7.5 ms */

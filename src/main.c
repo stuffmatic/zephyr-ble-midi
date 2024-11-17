@@ -6,18 +6,31 @@
 #include <zephyr/sys/ring_buffer.h>
 #include <ble_midi/ble_midi.h>
 
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(ble_midi_sample);
+
+static void log_sysex_transfer_time(int is_tx, int num_bytes, int time_ms) {
+	float bytes_per_s = time_ms == 0 ? 0 : (float)num_bytes / (0.001 * time_ms);
+	LOG_INF("sysex %s done | %d bytes in %d ms | %d bytes/s", is_tx ? "tx" : "rx",
+		num_bytes, (int)time_ms, (int)bytes_per_s);
+}
+
 /************************ App state ************************/
 K_MSGQ_DEFINE(button_event_q, sizeof(uint8_t), 128, 4);
 
-#define SYSEX_TX_MESSAGE_SIZE	2000
-#define SYSEX_TX_MAX_CHUNK_SIZE 240
+#define SYSEX_TX_MESSAGE_SIZE	20000
+#define SYSEX_TX_MAX_CHUNK_SIZE 130
+static uint8_t sysex_tx_chunk[SYSEX_TX_MAX_CHUNK_SIZE];
 
 struct sample_app_state_t {
 	int is_connected;
 	int ble_midi_is_ready;
 	int sysex_rx_data_byte_count;
 	int sysex_tx_data_byte_count;
+	int64_t sysex_tx_start_time_ms;
 	int sysex_tx_in_progress;
+	int64_t sysex_rx_start_time_ms;
+	int sysex_rx_in_progress;
 	int button_states[4];
 };
 
@@ -26,6 +39,9 @@ static struct sample_app_state_t sample_app_state = {
 							 .ble_midi_is_ready = 0,
 						     .sysex_tx_data_byte_count = 0,
 						     .sysex_tx_in_progress = 0,
+							 .sysex_rx_in_progress = 0,
+							 .sysex_tx_start_time_ms = 0,
+							 .sysex_tx_start_time_ms = 0,
 						     .sysex_rx_data_byte_count = 0,
 						     .button_states = {0, 0, 0, 0}};
 
@@ -62,11 +78,7 @@ static void midi_msg_work_cb(struct k_work *w)
 	while (ring_buf_get(&midi_msg_ringbuf, &data, 4) == 4) {
 		uint8_t msg_byte_count = data[0];
 		uint8_t *msg_bytes = &data[1];
-		printk("incoming MIDI message ");
-		for (int i = 0; i < msg_byte_count; i++) {
-			printk("%02x ", msg_bytes[i]);
-		}
-		printk("\n");
+		LOG_INF("MIDI rx | %02x %02x %02x | %d bytes", msg_bytes[0], msg_bytes[1], msg_bytes[2], msg_byte_count);
 		gpio_pin_toggle_dt(&leds[LED_RX_NON_SYSEX]);
 	};
 }
@@ -136,22 +148,40 @@ static void tx_done_cb()
 {
 	if (sample_app_state.sysex_tx_in_progress) {
 		if (sample_app_state.sysex_tx_data_byte_count == SYSEX_TX_MESSAGE_SIZE) {
+			u_int64_t dt_ms = k_uptime_get() - sample_app_state.sysex_tx_start_time_ms;
+			log_sysex_transfer_time(1, SYSEX_TX_MESSAGE_SIZE + 2, dt_ms);
 			ble_midi_tx_sysex_end();
 			sample_app_state.sysex_tx_in_progress = 0;
 		} else {
-			uint8_t chunk[SYSEX_TX_MAX_CHUNK_SIZE];
+#ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
+			// Fill tx fifo 
+			while (true) {
+				int num_bytes_left_to_send = SYSEX_TX_MESSAGE_SIZE - sample_app_state.sysex_tx_data_byte_count;
+				int num_bytes_to_send = num_bytes_left_to_send > SYSEX_TX_MAX_CHUNK_SIZE ? SYSEX_TX_MAX_CHUNK_SIZE : num_bytes_left_to_send;
+				if (num_bytes_to_send > 0) {
+					int result = ble_midi_tx_sysex_data(sysex_tx_chunk, num_bytes_to_send);
+					if (result == BLE_MIDI_FIFO_FULL) {
+						break;
+					}
+					sample_app_state.sysex_tx_data_byte_count += result;
+				} else {
+					break;
+				}
+			}
+#else
 			for (int i = 0; i < SYSEX_TX_MAX_CHUNK_SIZE; i++) {
-				chunk[i] = (sample_app_state.sysex_tx_data_byte_count + i) % 128;
+				sysex_tx_chunk[i] = (sample_app_state.sysex_tx_data_byte_count + i) % 128;
 			}
 			int num_bytes_left =
 				SYSEX_TX_MESSAGE_SIZE - sample_app_state.sysex_tx_data_byte_count;
 			int num_bytes_to_send = num_bytes_left < SYSEX_TX_MAX_CHUNK_SIZE
 							? num_bytes_left
 							: SYSEX_TX_MAX_CHUNK_SIZE;
-			int num_bytes_sent = ble_midi_tx_sysex_data(chunk, num_bytes_to_send);
+			int num_bytes_sent = ble_midi_tx_sysex_data(sysex_tx_chunk, num_bytes_to_send);
 			sample_app_state.sysex_tx_data_byte_count += num_bytes_sent;
+#endif
 		}
-	}
+	}	
 }
 
 /** Called when a non-sysex message has been parsed */
@@ -169,17 +199,19 @@ static void ble_midi_message_cb(uint8_t *bytes, uint8_t num_bytes, uint16_t time
 /** Called when a sysex message starts */
 static void ble_midi_sysex_start_cb(uint16_t timestamp)
 {
+	sample_app_state.sysex_rx_start_time_ms = k_uptime_get();
 	// printk("rx sysex start, t %d\n", timestamp);
 }
 /** Called when a sysex data byte has been received */
 static void ble_midi_sysex_data_cb(uint8_t data_byte)
 {
-	// printk("rx sysex byte %02x\n", data_byte);
+	sample_app_state.sysex_rx_data_byte_count += 1;
 }
 /** Called when a sysex message ends */
 static void ble_midi_sysex_end_cb(uint16_t timestamp)
 {
-	// printk("rx sysex end, t %d\n", timestamp);
+	u_int64_t dt_ms = k_uptime_get() - sample_app_state.sysex_rx_start_time_ms;
+	log_sysex_transfer_time(0, sample_app_state.sysex_rx_data_byte_count + 2, dt_ms);
 	gpio_pin_toggle_dt(&leds[LED_RX_SYSEX]);
 }
 
@@ -198,6 +230,10 @@ int main(void)
 {
 	init_leds();
 	init_buttons();
+
+	for (int i = 0; i < SYSEX_TX_MAX_CHUNK_SIZE; i++) {
+		sysex_tx_chunk[i] = i % 128;
+	}
 
 	uint32_t err = bt_enable(NULL);
 	__ASSERT(err == 0, "bt_enable failed");
@@ -246,6 +282,7 @@ int main(void)
 					next chunk repeatedly until done. */
 				sample_app_state.sysex_tx_in_progress = 1;
 				sample_app_state.sysex_tx_data_byte_count = 0;
+				sample_app_state.sysex_tx_start_time_ms = k_uptime_get();
 				ble_midi_tx_sysex_start();
 			} else if (button_idx == BUTTON_MANUAL_TX_FLUSH) {
 				#ifdef CONFIG_BLE_MIDI_TX_MODE_MANUAL
