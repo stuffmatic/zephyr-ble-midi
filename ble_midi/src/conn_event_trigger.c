@@ -50,7 +50,7 @@ void timer_init() {
 	    __ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
     }
 	
-    IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_1_irq_handler, 0);
+    IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_3_irq_handler, 0);
 	irq_enable(NRFX_TIMER_IRQ);
 }
 
