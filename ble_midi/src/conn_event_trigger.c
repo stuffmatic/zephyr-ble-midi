@@ -28,7 +28,7 @@ static conn_event_trigger_cb_t user_callback = NULL;
 atomic_t conn_interval_us = ATOMIC_INIT(0);
 
 #define NRFX_TIMER_IDX 3
-#define NRFX_TIMER_IRQ TIMER1_IRQn
+#define NRFX_TIMER_IRQ TIMER3_IRQn
 static const nrfx_timer_t timer = NRFX_TIMER_INSTANCE(NRFX_TIMER_IDX);
 
 static void timer_handler(nrf_timer_event_t event_type, void * p_context) {
