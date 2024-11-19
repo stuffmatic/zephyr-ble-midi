@@ -29,6 +29,7 @@ atomic_t conn_interval_us = ATOMIC_INIT(0);
 
 #define NRFX_TIMER_IDX 3
 #define NRFX_TIMER_IRQ TIMER3_IRQn
+#define EGU_INSTANCE NRF_EGU1
 static const nrfx_timer_t timer = NRFX_TIMER_INSTANCE(NRFX_TIMER_IDX);
 
 static void timer_handler(nrf_timer_event_t event_type, void * p_context) {
@@ -46,6 +47,7 @@ void timer_init() {
 	
     int init_result = nrfx_timer_init(&timer, &timer_cfg, timer_handler);
     if (init_result != NRFX_SUCCESS && init_result != NRFX_ERROR_ALREADY) {
+		// TODO: NRFX_ERROR_ALREADY on first run should be treated as an arror
         LOG_ERR("nrfx_timer_init result %d", init_result);
 	    __ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
     }
@@ -74,7 +76,7 @@ void timer_trigger(uint32_t delay_us) {
 
 static void egu0_handler(const void *context)
 {
-	nrf_egu_event_clear(NRF_EGU0, NRF_EGU_EVENT_TRIGGERED0);
+	nrf_egu_event_clear(EGU_INSTANCE, NRF_EGU_EVENT_TRIGGERED0);
 	// Set up a timer that fires just before the next connection event
 
 	int delay_us = atomic_get(&conn_interval_us) - CONFIG_BLE_MIDI_CONN_EVENT_NOTIFICATION_DISTANCE_US;
@@ -147,15 +149,16 @@ static int setup_connection_event_trigger(struct bt_conn *conn, bool enable)
 	cmd_set_trigger->period_in_events = 1;
 	cmd_set_trigger->conn_evt_counter_start = 0;
 
+	// TODO: check and at least log errors
 	if (enable) {
 		cmd_set_trigger->task_endpoint =
-			nrf_egu_task_address_get(NRF_EGU0, NRF_EGU_TASK_TRIGGER0);
+			nrf_egu_task_address_get(EGU_INSTANCE, NRF_EGU_TASK_TRIGGER0);
 		IRQ_DIRECT_CONNECT(SWI_IRQn, 5, egu0_handler, 0);
-		nrf_egu_int_enable(NRF_EGU0, NRF_EGU_INT_TRIGGERED0);
+		nrf_egu_int_enable(EGU_INSTANCE, NRF_EGU_INT_TRIGGERED0);
 		NVIC_EnableIRQ(SWI_IRQn);
 	} else {
 		cmd_set_trigger->task_endpoint = 0;
-		nrf_egu_int_disable(NRF_EGU0, NRF_EGU_INT_TRIGGERED0);
+		nrf_egu_int_disable(EGU_INSTANCE, NRF_EGU_INT_TRIGGERED0);
 		NVIC_DisableIRQ(SWI_IRQn);
 	}
 
