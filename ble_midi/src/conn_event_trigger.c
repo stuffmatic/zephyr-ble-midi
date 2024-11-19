@@ -18,7 +18,7 @@ static conn_event_trigger_cb_t user_callback = NULL;
 #include <nrfx_timer.h>
 #include <zephyr/kernel.h>
 
-#define PPI_CH_ID      15
+#define PPI_CH_ID      CONFIG_BLE_MIDI_EVENT_TRIGGER_PPI_CHANNEL
 #if defined(DPPIC_PRESENT)
 #define SWI_IRQn EGU0_IRQn
 #else
@@ -27,9 +27,9 @@ static conn_event_trigger_cb_t user_callback = NULL;
 
 atomic_t conn_interval_us = ATOMIC_INIT(0);
 
-#define NRFX_TIMER_IDX 3
-#define NRFX_TIMER_IRQ TIMER3_IRQn
-#define EGU_INSTANCE NRF_EGU1
+#define NRFX_TIMER_IDX 1
+#define NRFX_TIMER_IRQ TIMER1_IRQn
+#define EGU_INSTANCE NRF_EGU0
 static const nrfx_timer_t timer = NRFX_TIMER_INSTANCE(NRFX_TIMER_IDX);
 
 static void timer_handler(nrf_timer_event_t event_type, void * p_context) {
@@ -52,7 +52,7 @@ void timer_init() {
 	    __ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
     }
 	
-    IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_3_irq_handler, 0);
+    IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_1_irq_handler, 0);
 	irq_enable(NRFX_TIMER_IRQ);
 }
 
