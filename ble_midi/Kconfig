@@ -46,7 +46,7 @@ config BLE_MIDI_TX_MODE_CONN_EVENT
     select BT_CTLR_SDC_EVENT_TRIGGER
     # SoftDevice seems to use TIMER0, so don't use that.
     # see https://devzone.nordicsemi.com/f/nordic-q-a/38502/nrfx-timer-issue
-    select NRFX_TIMER1
+    select NRFX_TIMER3
     # CONFIG_BT_LL_SOFTDEVICE_MULTIROLE is needed for CONFIG_BT_CTLR_SDC_EVENT_TRIGGER to work.
     # Unfortunately, it also adds 60kbytes to the image size in an optimized build.
     # See https://devzone.nordicsemi.com/f/nordic-q-a/112166/does-the-event-trigger-api-always-require-config_bt_central-significantly-increases-peripheral-image-size
