@@ -294,6 +294,11 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	LOG_INF("Device disconnected, reason %d", reason);
+	
+	#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
+	conn_event_trigger_set_enabled(conn, 0);
+	#endif
+
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
 	on_ready_state_changed(BLE_MIDI_NOT_CONNECTED);
 }

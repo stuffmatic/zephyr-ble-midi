@@ -46,11 +46,12 @@ void timer_init() {
 	timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_32;
 	
     int init_result = nrfx_timer_init(&timer, &timer_cfg, timer_handler);
-    if (init_result != NRFX_SUCCESS && init_result != NRFX_ERROR_ALREADY) {
-		// TODO: NRFX_ERROR_ALREADY on first run should be treated as an arror
+    if (init_result != NRFX_SUCCESS) {
         LOG_ERR("nrfx_timer_init result %d", init_result);
 	    __ASSERT_NO_MSG(init_result == NRFX_SUCCESS);
-    }
+    } else {
+		LOG_INF("Initialized event trigger timer");
+	}
 	
     IRQ_DIRECT_CONNECT(NRFX_TIMER_IRQ, 0, nrfx_timer_1_irq_handler, 0);
 	irq_enable(NRFX_TIMER_IRQ);
@@ -59,6 +60,7 @@ void timer_init() {
 void timer_deinit() {
 	irq_disable(NRFX_TIMER_IRQ);
 	nrfx_timer_uninit(&timer);
+	LOG_INF("Deinitialized event trigger timer");
 }
 
 void timer_trigger(uint32_t delay_us) {
@@ -199,5 +201,11 @@ void conn_event_trigger_set_enabled(struct bt_conn *conn, int enabled)
 	} else {
 		timer_deinit();
 	}
-	setup_connection_event_trigger(conn, enabled);
+
+	if (enabled) {
+		setup_connection_event_trigger(conn, enabled);
+	} else {
+		// The connection event trigger is automatically removed 
+		// on disconnect.
+	}
 }
