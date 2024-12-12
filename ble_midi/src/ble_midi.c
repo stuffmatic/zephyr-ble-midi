@@ -68,13 +68,23 @@ static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value
 #define BT_UUID_MIDI_SERVICE BT_UUID_DECLARE_128(BLE_MIDI_SERVICE_UUID)
 #define BT_UUID_MIDI_CHRC    BT_UUID_DECLARE_128(BLE_MIDI_CHAR_UUID)
 
-BT_GATT_SERVICE_DEFINE(ble_midi_service, BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SERVICE),
-		       BT_GATT_CHARACTERISTIC(BT_UUID_MIDI_CHRC,
-					      BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY |
-						      BT_GATT_CHRC_WRITE_WITHOUT_RESP,
-					      BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, midi_read_cb,
-					      midi_write_cb, NULL),
-		       BT_GATT_CCC(midi_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), );
+#define BLE_MIDI_GATT_ATTRIBUTES BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SERVICE), \
+		       BT_GATT_CHARACTERISTIC(BT_UUID_MIDI_CHRC, \
+					      			  BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY | \
+						      	      BT_GATT_CHRC_WRITE_WITHOUT_RESP, \ 
+					      			  BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, \
+									  midi_read_cb, \
+					      			  midi_write_cb, NULL), \
+		       BT_GATT_CCC(midi_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE)
+
+#ifdef CONFIG_BT_GATT_DYNAMIC_DB
+static struct bt_gatt_attr gatt_attributes[] = {
+	BLE_MIDI_GATT_ATTRIBUTES
+};
+static struct bt_gatt_service ble_midi_gatt_service = BT_GATT_SERVICE(gatt_attributes);
+#else
+BT_GATT_SERVICE_DEFINE(ble_midi_gatt_service, BLE_MIDI_GATT_ATTRIBUTES); 
+#endif
 
 /********* Buffered tx stuff **********/
 
@@ -209,7 +219,7 @@ static void on_notify_done(struct bt_conn *conn, void *user_data)
 int send_packet(uint8_t *bytes, int num_bytes)
 {
 	struct bt_gatt_notify_params notify_params = {
-		.attr = &ble_midi_service.attrs[1],
+		.attr = &ble_midi_gatt_service.attrs[1],
 		.data = bytes,
 		.len = num_bytes,
 		.func = on_notify_done,
@@ -323,6 +333,15 @@ enum ble_midi_error_t ble_midi_init(struct ble_midi_callbacks *callbacks)
 		return BLE_MIDI_ALREADY_INITIALIZED;
 	}
 
+#ifdef CONFIG_BT_GATT_DYNAMIC_DB
+	int register_result = ble_midi_service_register();
+	if (register_result) {
+		LOG_ERR("ble_midi_service_register failed with error %d", register_result);
+		return BLE_MIDI_SERVICE_REGISTRATION_ERROR;
+	}
+	LOG_INF("Registered BLE MIDI service");
+#endif
+
 	ble_midi_context_init(&context);
 
 	bt_gatt_cb_register(&gatt_callbacks);
@@ -426,5 +445,16 @@ void ble_midi_tx_flush()
 {
 	/* Manually invoke radio notification handler */
 	radio_notif_handler();
+}
+#endif
+
+#ifdef CONFIG_BT_GATT_DYNAMIC_DB
+
+int ble_midi_service_register() {
+	return bt_gatt_service_register(&ble_midi_gatt_service);
+}
+
+int ble_midi_service_unregister() {
+	return bt_gatt_service_unregister(&ble_midi_gatt_service);
 }
 #endif

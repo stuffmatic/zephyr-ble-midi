@@ -11,8 +11,9 @@
 enum ble_midi_error_t {
 	BLE_MIDI_SUCCESS = 0,
 	BLE_MIDI_ALREADY_INITIALIZED = -100,
-	BLE_MIDI_FIFO_FULL = -101,
-	BLE_MIDI_INVALID_ARGUMENT = -102
+	BLE_MIDI_TX_FIFO_FULL = -101,
+	BLE_MIDI_INVALID_ARGUMENT = -102,
+	BLE_MIDI_SERVICE_REGISTRATION_ERROR = -103
 };
 
 typedef enum  {
@@ -84,6 +85,17 @@ enum ble_midi_error_t ble_midi_tx_sysex_end();
  * Send buffered MIDI messages, if any.
  */
 void ble_midi_tx_flush();
-#endif
+#endif // CONFIG_BLE_MIDI_TX_MODE_MANUAL
+
+#ifdef CONFIG_BT_GATT_DYNAMIC_DB
+/**
+ * 
+ */
+int ble_midi_service_register();
+/**
+ * 
+ */
+int ble_midi_service_unregister();
+#endif // CONFIG_BT_GATT_DYNAMIC_DB
 
 #endif
