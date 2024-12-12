@@ -373,9 +373,8 @@ enum ble_midi_error_t ble_midi_tx_msg(uint8_t *bytes)
 	if (add_result == TX_QUEUE_SUCCESS) {
 		submit_tx_queue_fifo_work();
 	}
-	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_FIFO_FULL;
+	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_TX_FIFO_FULL;
 #endif
-	return BLE_MIDI_SUCCESS; // TODO: report errors
 }
 
 enum ble_midi_error_t ble_midi_tx_sysex_start()
@@ -389,7 +388,7 @@ enum ble_midi_error_t ble_midi_tx_sysex_start()
 	if (add_result == TX_QUEUE_SUCCESS) {
 		submit_tx_queue_fifo_work();
 	}
-	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_FIFO_FULL;
+	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_TX_FIFO_FULL;
 #endif
 }
 
@@ -404,7 +403,7 @@ enum ble_midi_error_t ble_midi_tx_sysex_end()
 	if (add_result == TX_QUEUE_SUCCESS) {
 		submit_tx_queue_fifo_work();
 	}
-	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_FIFO_FULL;
+	return add_result == TX_QUEUE_SUCCESS ? BLE_MIDI_SUCCESS : BLE_MIDI_TX_FIFO_FULL;
 #endif
 }
 
@@ -433,7 +432,7 @@ int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
 	if (add_result > 0) {
 		submit_tx_queue_fifo_work();
 	}
-	return add_result > 0 ? add_result : BLE_MIDI_FIFO_FULL;
+	return add_result > 0 ? add_result : BLE_MIDI_TX_FIFO_FULL;
 #endif
 }
 

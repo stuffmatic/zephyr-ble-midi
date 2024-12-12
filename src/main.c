@@ -160,7 +160,7 @@ static void tx_done_cb()
 				int num_bytes_to_send = num_bytes_left_to_send > SYSEX_TX_MAX_CHUNK_SIZE ? SYSEX_TX_MAX_CHUNK_SIZE : num_bytes_left_to_send;
 				if (num_bytes_to_send > 0) {
 					int result = ble_midi_tx_sysex_data(sysex_tx_chunk, num_bytes_to_send);
-					if (result == BLE_MIDI_FIFO_FULL) {
+					if (result == BLE_MIDI_TX_FIFO_FULL) {
 						break;
 					}
 					sample_app_state.sysex_tx_data_byte_count += result;
