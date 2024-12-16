@@ -82,7 +82,11 @@ static struct bt_gatt_attr gatt_attributes[] = {
 	BLE_MIDI_GATT_ATTRIBUTES
 };
 static struct bt_gatt_service ble_midi_gatt_service = BT_GATT_SERVICE(gatt_attributes);
+// TODO: use bt_conn_cb_register/bt_conn_cb_unregister when the API becomes available in nrf connect sdk.
+// https://docs.zephyrproject.org/apidoc/latest/group__bt__conn.html#gad2f90b34390e3c3697fd455ae4ef5f31
+static int ble_midi_service_is_registered = 0;
 #else
+static const int ble_midi_service_is_registered = 1;
 BT_GATT_SERVICE_DEFINE(ble_midi_gatt_service, BLE_MIDI_GATT_ATTRIBUTES); 
 #endif
 
@@ -250,7 +254,7 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 
 #ifdef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
 	if (context.tx_writer.tx_buf_size > tx_buf_size_new) {
-		// TODO: handle this somehow?
+		// TODO: handle this somehow, e.g by decreasing size _after_ having sent the packet
 		// TODO: warn about this also when doing buffered TX
 		LOG_WRN("Lowering tx_buf_size from %d to %d", context.tx_writer.tx_buf_size,
 			tx_buf_size_new);
@@ -270,6 +274,10 @@ static struct bt_gatt_cb gatt_callbacks = {.att_mtu_updated =
 
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
+	if (!ble_midi_service_is_registered) {
+		return;
+	}
+
 	on_ready_state_changed(BLE_MIDI_CONNECTED);
 
 	int tx_running_status = 0;
@@ -303,6 +311,10 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
+	if (!ble_midi_service_is_registered) {
+		return;
+	}
+
 	LOG_INF("Device disconnected, reason %d", reason);
 	
 	#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
@@ -316,6 +328,10 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t latency,
 			     uint16_t timeout)
 {
+	if (!ble_midi_service_is_registered) {
+		return;
+	}
+
 	LOG_INF("Conn. params changed: interval: %d ms, latency: %d, timeout: %d",
 		BT_CONN_INTERVAL_TO_MS(interval), latency, timeout);
 #if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
@@ -419,7 +435,8 @@ int ble_midi_tx_sysex_data(uint8_t *bytes, int num_bytes)
 		ble_midi_writer_add_sysex_data(&context.tx_writer, bytes, num_bytes, timestamp_ms());
 	if (add_result < 0) {
 		LOG_ERR("ble_midi_writer_add_sysex_data failed with error %d", add_result);
-		return -EINVAL;
+		// TODO: better error code here
+		return add_result;
 	}
 
 	int send_rc = send_packet(context.tx_writer.tx_buf, add_result);
@@ -450,10 +467,18 @@ void ble_midi_tx_flush()
 #ifdef CONFIG_BT_GATT_DYNAMIC_DB
 
 int ble_midi_service_register() {
-	return bt_gatt_service_register(&ble_midi_gatt_service);
+	int register_result = bt_gatt_service_register(&ble_midi_gatt_service);
+	if (register_result == 0) {
+		ble_midi_service_is_registered = 1;
+	}
+	return register_result;
 }
 
 int ble_midi_service_unregister() {
-	return bt_gatt_service_unregister(&ble_midi_gatt_service);
+	int unregister_result = bt_gatt_service_unregister(&ble_midi_gatt_service);
+	if (unregister_result == 0) {
+		ble_midi_service_is_registered = 0;
+	}
+	return unregister_result;
 }
 #endif
