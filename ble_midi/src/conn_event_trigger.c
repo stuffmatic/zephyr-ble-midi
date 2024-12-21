@@ -59,8 +59,10 @@ void timer_init() {
 
 void timer_deinit() {
 	irq_disable(NRFX_TIMER_IRQ);
-	nrfx_timer_uninit(&timer);
-	LOG_INF("Deinitialized event trigger timer");
+	if (nrfx_timer_init_check(&timer)) {
+		nrfx_timer_uninit(&timer);
+		LOG_INF("Deinitialized event trigger timer");
+	}
 }
 
 void timer_trigger(uint32_t delay_us) {
