@@ -4,7 +4,7 @@ This is a [Zephyr](https://www.zephyrproject.org/) implementation of the [BLE-MI
 
 To minimize latency, a connection interval of 7.5 ms is requested, which is the smallest interval allowed by the Bluetooth low energy specification. Note that a central may or may not accept this value.
 
-By default, outgoing MIDI messages are sent in separate BLE packets. When building for nRF SoCs with nRF Connect SDK, outgoing non-sysex messages can optionally be buffered and transmitted in a single BLE packet just before the next connection event to reduce latency, see `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT`.
+By default, outgoing MIDI messages are sent in separate BLE packets. When building for nRF SoCs with nRF Connect SDK, outgoing messages can optionally be buffered and transmitted in a single BLE packet just before the next connection event to reduce latency, see `CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT`.
 
 ## Usage
 
