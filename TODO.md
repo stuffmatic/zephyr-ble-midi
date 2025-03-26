@@ -2,17 +2,21 @@
 * investigate disconnect when using debug_optimizations.
 * something to do with https://forums.developer.apple.com/forums/thread/713095 ?
 * available callback not working when disconnecting/reconnecting?
-* return error if trying to transmit data to non-ready device
 * GPIO instrumentation for measuring event trigger timing
-* ~~rename ble_midi_packet_error_t to ble_midi_packet_error_t, add ble_midi_packet_error_t with DEVICE_NOT_READY, ETC~~
-* ~~audio midi setup disconnect button does not cause disconnect callback to be invoked, as opposed to bluetility. TODO: use notification on/off to indicate service availability?~~
+* adding data bytes to a full packet should result in packet full instead of 0 bytes? or no?
+* remove writer->in_sysex_msg and enforce this somewhere else? or check if a packet is sysex continuation?
+* _t suffix on structs and enums?
+* error handling in public API functions:
+  * invalid data
+  * device not ready
+* use logging in sample app
+* fix sysex contents in demo app 
+* rename writer to packet?
+* disable connection event trigger timer
+* #define SWI_IRQn EGU0_IRQn collides with EGU_INSTANCE EGU0
 
 # tx queue refactor
 
 * can't select bt_central in module conf
 * remove device from macos audio midi setup made it possible to connect again 🤷‍♂️
 * only retry transmission after ble buffer queue full once notify cb is  called
-
-# new event trigger
-
-*  <err> ble_midi: nrfx_timer_init result 195887116 ASSERTION FAIL [init_result == NRFX_SUCCESS] @ CMAKE_SOURCE_DIR/ble_midi/src/conn_event_trigger.c:50
