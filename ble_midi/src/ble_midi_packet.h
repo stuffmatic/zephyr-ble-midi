@@ -53,7 +53,7 @@ enum ble_midi_packet_error_t ble_midi_parse_packet(uint8_t *rx_buf, uint32_t rx_
  * Keeps track of the state when writing BLE MIDI packets.
  */
 struct ble_midi_writer_t {
-	/* The packet to send. */
+	/* Bytes to send. */
 	uint8_t tx_buf[BLE_MIDI_TX_PACKET_MAX_SIZE];
 	/* Current maximum packet size. Must not be greater than BLE_MIDI_TX_PACKET_MAX_SIZE */
 	uint16_t tx_buf_max_size;
@@ -70,8 +70,7 @@ struct ble_midi_writer_t {
 	uint8_t in_sysex_msg;
 	/* Indicates if running status should be used. */
 	int running_status_enabled;
-	/* Indicates if note off messages should be represented as zero velocity note on messages.
-	 */
+	/* Indicates if note off messages should be represented as zero velocity note on messages. */
 	int note_off_as_note_on;
 };
 

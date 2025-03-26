@@ -7,7 +7,7 @@ void ble_midi_context_init(struct ble_midi_context* context) {
     context->user_callbacks.sysex_end_cb = NULL;
     context->user_callbacks.sysex_start_cb = NULL;
     context->user_callbacks.tx_done_cb = NULL;
-    context->ready_state = BLE_MIDI_NOT_CONNECTED;
+    context->ready_state = BLE_MIDI_STATE_NOT_CONNECTED;
     
     ble_midi_context_reset(context, 0, 0);
 }

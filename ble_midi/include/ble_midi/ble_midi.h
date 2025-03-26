@@ -13,19 +13,23 @@ enum ble_midi_error_t {
 	BLE_MIDI_ALREADY_INITIALIZED = -100,
 	BLE_MIDI_TX_FIFO_FULL = -101,
 	BLE_MIDI_INVALID_ARGUMENT = -102,
-	BLE_MIDI_SERVICE_REGISTRATION_ERROR = -103
+	BLE_MIDI_SERVICE_REGISTRATION_ERROR = -103,
+	BLE_MIDI_NOT_CONNECTED = -104
 };
 
 typedef enum  {
 	/* Not connected */
-	BLE_MIDI_NOT_CONNECTED = 0,
+	BLE_MIDI_STATE_NOT_CONNECTED = 0,
 	/* Connected but not ready to communicate. */
-	BLE_MIDI_CONNECTED,
+	BLE_MIDI_STATE_CONNECTED,
 	/* Connected and ready to communicate. */
-	BLE_MIDI_READY
+	BLE_MIDI_STATE_READY
 } ble_midi_ready_state_t ;
 
-/* Used to signal if the BLE MIDI service is ready. Only attempt to transmit data if state is BLE_MIDI_READY. */
+/** 
+ * Used to signal if the BLE MIDI service is ready. 
+ * Only attempt to transmit data if state is BLE_MIDI_READY. 
+ **/
 typedef void (*ble_midi_ready_cb_t)(ble_midi_ready_state_t state);
 /** Called when a BLE MIDI packet has just been sent. */
 typedef void (*ble_midi_tx_done_cb_t)();

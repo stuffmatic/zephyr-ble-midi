@@ -49,6 +49,7 @@ static ssize_t midi_write_cb(struct bt_conn *conn, const struct bt_gatt_attr *at
 					       .sysex_data_cb = context.user_callbacks.sysex_data_cb,
 					       .sysex_end_cb = context.user_callbacks.sysex_end_cb};
 	/* log_buffer("MIDI rx:", &((uint8_t *)buf)[offset], len); */
+	
 	enum ble_midi_packet_error_t rc = ble_midi_parse_packet(&((uint8_t *)buf)[offset], len, &parse_cb);
 	if (rc != BLE_MIDI_PACKET_SUCCESS) {
 		LOG_ERR("ble_midi_parse_packet returned error %d", rc);
@@ -62,7 +63,7 @@ static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value
 
 	/* MIDI I/O characteristic notification has been turned on/off.
 	   Notify the user that BLE MIDI is ready/not ready. */
-	on_ready_state_changed(notification_enabled ? BLE_MIDI_READY : BLE_MIDI_CONNECTED);
+	on_ready_state_changed(notification_enabled ? BLE_MIDI_STATE_READY : BLE_MIDI_STATE_CONNECTED);
 }
 
 #define BT_UUID_MIDI_SERVICE BT_UUID_DECLARE_128(BLE_MIDI_SERVICE_UUID)
@@ -278,7 +279,7 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
-	on_ready_state_changed(BLE_MIDI_CONNECTED);
+	on_ready_state_changed(BLE_MIDI_STATE_CONNECTED);
 
 	int tx_running_status = 0;
 	#ifdef CONFIG_BLE_MIDI_SEND_RUNNING_STATUS
@@ -322,7 +323,7 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	#endif
 
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
-	on_ready_state_changed(BLE_MIDI_NOT_CONNECTED);
+	on_ready_state_changed(BLE_MIDI_STATE_NOT_CONNECTED);
 }
 
 static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t latency,

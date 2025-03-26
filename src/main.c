@@ -129,8 +129,8 @@ static void init_buttons()
 /****************** BLE MIDI callbacks ******************/
 static void ble_midi_ready_cb(ble_midi_ready_state_t state)
 {
-	int is_connected = state != BLE_MIDI_NOT_CONNECTED;
-	int is_ready = state == BLE_MIDI_READY;
+	int is_connected = state != BLE_MIDI_STATE_NOT_CONNECTED;
+	int is_ready = state == BLE_MIDI_STATE_READY;
 	
 	gpio_pin_set_dt(&leds[LED_CONNECTED], is_connected);
 	gpio_pin_set_dt(&leds[LED_READY], is_ready);
@@ -154,7 +154,7 @@ static void tx_done_cb()
 			sample_app_state.sysex_tx_in_progress = 0;
 		} else {
 #ifndef CONFIG_BLE_MIDI_TX_MODE_SINGLE_MSG
-			// Fill tx fifo 
+			// Fill tx fifo. TODO: fix contents
 			while (true) {
 				int num_bytes_left_to_send = SYSEX_TX_MESSAGE_SIZE - sample_app_state.sysex_tx_data_byte_count;
 				int num_bytes_to_send = num_bytes_left_to_send > SYSEX_TX_MAX_CHUNK_SIZE ? SYSEX_TX_MAX_CHUNK_SIZE : num_bytes_left_to_send;

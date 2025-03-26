@@ -394,6 +394,7 @@ int ble_midi_writer_add_sysex_data(struct ble_midi_writer_t *writer, uint8_t *da
 	/* Add packet header? */
 	if (writer->tx_buf_size == 0) {
 		if (writer->tx_buf_max_size < 1) {
+			/* Pathological case: not enough room for a packet header. */
 			return BLE_MIDI_PACKET_ERROR_PACKET_FULL;
 		}
 		writer->tx_buf[writer->tx_buf_size++] = header_byte(timestamp);
