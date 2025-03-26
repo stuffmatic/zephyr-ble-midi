@@ -74,7 +74,7 @@ void notify_has_data(int has_data) {
 
 uint16_t ble_timestamp()
 {
-    printf("ble_timestamp\n");
+    // printf("ble_timestamp\n");
 	return 123;
 }
 
@@ -338,6 +338,8 @@ int main(int argc, char *argv[])
     test_multi_packet_sysex();
     test_continued_multi_packet_sysex();
     test_invalid_sysex_data();
+
+    // test_has_data_flag(); //should work both for sysex and messages
 
     return 0;
 }
