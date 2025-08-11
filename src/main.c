@@ -75,7 +75,7 @@ RING_BUF_DECLARE(midi_msg_ringbuf, 128);
 static void midi_msg_work_cb(struct k_work *w)
 {
 	uint8_t data[4] = {0, 0, 0, 0};
-	while (ring_buf_get(&midi_msg_ringbuf, &data, 4) == 4) {
+	while (ring_buf_get(&midi_msg_ringbuf, &data[0], 4) == 4) {
 		uint8_t msg_byte_count = data[0];
 		uint8_t *msg_bytes = &data[1];
 		LOG_INF("MIDI rx | %02x %02x %02x | %d bytes", msg_bytes[0], msg_bytes[1], msg_bytes[2], msg_byte_count);
@@ -191,9 +191,9 @@ static void ble_midi_message_cb(uint8_t *bytes, uint8_t num_bytes, uint16_t time
 	for (int i = 0; i < num_bytes; i++) {
 		data[i + 1] = bytes[i];
 	}
-	uint32_t num_bytes_written = ring_buf_put(&midi_msg_ringbuf, &data, 4);
+	uint32_t num_bytes_written = ring_buf_put(&midi_msg_ringbuf, &data[0], 4);
 	__ASSERT(num_bytes_written == 4, "Failed to write to MIDI msg ringbuf");
-	int submit_rc = k_work_submit(&midi_msg_work);
+	k_work_submit(&midi_msg_work);
 }
 
 /** Called when a sysex message starts */
@@ -248,7 +248,7 @@ int main(void)
 	ble_midi_init(&midi_callbacks);
 
 	int ad_err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
-	// printk("bt_le_adv_start %d\n", ad_err);
+	__ASSERT_NO_MSG(ad_err == 0);
 
 	while (1) {
 		/* Poll button events */

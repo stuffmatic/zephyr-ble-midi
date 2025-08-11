@@ -54,6 +54,7 @@ static ssize_t midi_write_cb(struct bt_conn *conn, const struct bt_gatt_attr *at
 	if (rc != BLE_MIDI_PACKET_SUCCESS) {
 		LOG_ERR("ble_midi_parse_packet returned error %d", rc);
 	}
+	return len;
 }
 
 static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
@@ -72,7 +73,7 @@ static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value
 #define BLE_MIDI_GATT_ATTRIBUTES BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SERVICE), \
 		       BT_GATT_CHARACTERISTIC(BT_UUID_MIDI_CHRC, \
 					      			  BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY | \
-						      	      BT_GATT_CHRC_WRITE_WITHOUT_RESP, \ 
+						      	      BT_GATT_CHRC_WRITE_WITHOUT_RESP, \
 					      			  BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, \
 									  midi_read_cb, \
 					      			  midi_write_cb, NULL), \
@@ -246,8 +247,6 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	 */
 	int actual_mtu = bt_gatt_get_mtu(conn);
 	int tx_buf_size_new = actual_mtu - 3;
-	struct bt_conn_info info = {0};
-	int e = bt_conn_get_info(conn, &info);
 
 	int tx_buf_max_size = tx_buf_size_new > BLE_MIDI_TX_PACKET_MAX_SIZE
 				      ? BLE_MIDI_TX_PACKET_MAX_SIZE

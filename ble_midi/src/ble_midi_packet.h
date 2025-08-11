@@ -102,7 +102,7 @@ enum ble_midi_packet_error_t ble_midi_writer_start_sysex_msg(struct ble_midi_wri
  * Returns a non-negative value on success, indicating the number of bytes written to the packet.
  * Negative return values correspond to error codes from the ble_midi_packet_error_t enum.
  */
-int ble_midi_writer_add_sysex_data(struct ble_midi_writer_t *writer, uint8_t *data_bytes,
+int ble_midi_writer_add_sysex_data(struct ble_midi_writer_t *writer, const uint8_t *data_bytes,
 				   uint32_t num_data_bytes, uint16_t timestamp);
 
 /* End a sysex message, possibly spanning multiple messages. */

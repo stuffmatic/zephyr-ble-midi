@@ -223,7 +223,10 @@ int tx_queue_fifo_add_sysex_data(struct tx_queue* queue, const uint8_t* bytes, i
 	};
 
 	int header_write_result = queue->callbacks.fifo_write(chunk_header, SYSEX_DATA_CHUNK_HEADER_SIZE);
-	int data_write_result = queue->callbacks.fifo_write(bytes, num_bytes_to_send);
+	int data_write_result = 0;
+	if (header_write_result == SYSEX_DATA_CHUNK_HEADER_SIZE) {
+		data_write_result = queue->callbacks.fifo_write(bytes, num_bytes_to_send);
+	}
 
 	return data_write_result;
 }
@@ -247,7 +250,7 @@ int tx_queue_read_from_fifo(struct tx_queue* queue) {
 			}
 		} else {
 			// peek the first bytes of the chunk.
-			int chunk_peek_result = queue->callbacks.fifo_peek(msg_bytes, 3);
+			queue->callbacks.fifo_peek(msg_bytes, 3);
 			int first_byte = msg_bytes[0];
 			int add_result = 0;
 			if (first_byte == SYSEX_DATA_CHUNK_ID) {

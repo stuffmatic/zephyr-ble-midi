@@ -377,7 +377,7 @@ enum ble_midi_packet_error_t ble_midi_writer_end_sysex_msg(struct ble_midi_write
 	return result;
 }
 
-int ble_midi_writer_add_sysex_data(struct ble_midi_writer_t *writer, uint8_t *data_bytes,
+int ble_midi_writer_add_sysex_data(struct ble_midi_writer_t *writer, const uint8_t *data_bytes,
 				   				   uint32_t num_data_bytes, uint16_t timestamp)
 {
 	// TODO: the writer->tx_buf_size > 0 check was added to make this code play nice with 
