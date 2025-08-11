@@ -182,6 +182,7 @@ static int setup_connection_event_trigger(struct bt_conn *conn, bool enable)
 int conn_event_trigger_init(conn_event_trigger_cb_t callback)
 {
     user_callback = callback;
+	return 0;
 }
 
 void conn_event_trigger_refresh_conn_interval(struct bt_conn *conn)
@@ -190,7 +191,7 @@ void conn_event_trigger_refresh_conn_interval(struct bt_conn *conn)
 	int result = bt_conn_get_info(conn, &conn_info);
 	if (result == 0) {
 		atomic_set(&conn_interval_us, 1250 * conn_info.le.interval);
-		LOG_INF("New conn. interval %d us", atomic_get(&conn_interval_us));
+		LOG_INF("New conn. interval %d us", (int)atomic_get(&conn_interval_us));
 	} else {
 		LOG_ERR("bt_conn_get_info failed with error %d", result);
 	}

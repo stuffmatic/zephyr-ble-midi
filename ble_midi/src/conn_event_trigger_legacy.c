@@ -34,6 +34,7 @@ int conn_event_trigger_init(conn_event_trigger_cb_t callback) {
 	}
 
 	__ASSERT(rc == 0, "mpsl_radio_notification_cfg_set failed");
+    return rc;
 }
 
 void conn_event_trigger_refresh_conn_interval(struct bt_conn *conn)

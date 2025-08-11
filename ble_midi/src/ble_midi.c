@@ -197,7 +197,7 @@ static void tx_queue_fifo_work_cb(struct k_work *w)
 
 	if (unfinished_work_count > 1) {
 		// There are more work items waiting. Resubmit.
-		int submit_result = k_work_submit(&tx_queue_fifo_work);
+		/* int submit_result = */k_work_submit(&tx_queue_fifo_work);
 	}
 	atomic_dec(&context.pending_tx_queue_fifo_work_count);
 }
@@ -206,7 +206,7 @@ static void submit_tx_queue_fifo_work() {
 	/* ... and submit a work item for adding the message to the next outgoing packet. */
 	// TODO: return error code https://docs.zephyrproject.org/apidoc/latest/group__workqueue__apis.html#ga5353e76f73db070614f50d06d292d05c
 	atomic_inc(&context.pending_tx_queue_fifo_work_count);
-	int submit_result = k_work_submit(&tx_queue_fifo_work); 
+	/*int submit_result = */k_work_submit(&tx_queue_fifo_work); 
 }
 
 #endif /* CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT */
