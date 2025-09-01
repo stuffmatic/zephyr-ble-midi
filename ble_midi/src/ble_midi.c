@@ -238,15 +238,14 @@ int send_packet(uint8_t *bytes, int num_bytes)
 #define INTERVAL_MAX 0x6 /* 7.5 ms */
 static struct bt_le_conn_param *conn_param = BT_LE_CONN_PARAM(INTERVAL_MIN, INTERVAL_MAX, 0, 200);
 
-void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
+static void on_mtu_changed(struct bt_conn *conn, uint16_t mtu_size)
 {
 	/* From the BLE MIDI spec:
 	 * "In transmitting MIDI data over Bluetooth, a series of MIDI messages of
 	 * various sizes must be encoded into packets no larger than the negotiated
 	 * MTU minus 3 bytes (typically 20 bytes or larger.)"
 	 */
-	int actual_mtu = bt_gatt_get_mtu(conn);
-	int tx_buf_size_new = actual_mtu - 3;
+	int tx_buf_size_new = mtu_size - 3;
 
 	int tx_buf_max_size = tx_buf_size_new > BLE_MIDI_TX_PACKET_MAX_SIZE
 				      ? BLE_MIDI_TX_PACKET_MAX_SIZE
@@ -265,12 +264,18 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	submit_tx_queue_fifo_work();
 #endif
 
-	LOG_INF("MTU updated: tx %d, rx %d (actual %d), setting tx_buf_max_size to %d", tx, rx, actual_mtu,
-		tx_buf_max_size);
+	LOG_INF("Setting tx_buf_max_size to %d (MTU is %d)", tx_buf_max_size, mtu_size);
+}
+
+static void att_mtu_updated_cb(struct bt_conn *conn, uint16_t tx, uint16_t rx)
+{
+	LOG_INF("MTU updated: tx %d, rx %d", tx, rx);
+	int actual_mtu = bt_gatt_get_mtu(conn);
+	on_mtu_changed(conn, actual_mtu);
 }
 
 static struct bt_gatt_cb gatt_callbacks = {.att_mtu_updated =
-						   mtu_updated}; // TODO: must this be global?
+						   att_mtu_updated_cb};
 
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
@@ -289,6 +294,11 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 	tx_note_off_as_note_on = 1
 	#endif
 	ble_midi_context_reset(&context, tx_running_status, tx_note_off_as_note_on);
+
+	int actual_mtu = bt_gatt_get_mtu(conn);
+	// the att_mtu_updated callback may have been invoked before the connected callback,
+	// so get the current MTU to make sure we're using the current value.
+	on_mtu_changed(conn, actual_mtu);
 
 	LOG_INF("tx_running_status %d, tx_note_off_as_note_on %d", tx_running_status,
 		tx_note_off_as_note_on);
