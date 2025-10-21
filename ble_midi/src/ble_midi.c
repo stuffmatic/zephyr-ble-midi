@@ -70,11 +70,17 @@ static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value
 #define BT_UUID_MIDI_SERVICE BT_UUID_DECLARE_128(BLE_MIDI_SERVICE_UUID)
 #define BT_UUID_MIDI_CHRC    BT_UUID_DECLARE_128(BLE_MIDI_CHAR_UUID)
 
+#if CONFIG_BT_SMP
+#define BLE_MIDI_CHARACTERISTIC_PERMISSIONS (BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT)
+#else
+#define BLE_MIDI_CHARACTERISTIC_PERMISSIONS (BT_GATT_PERM_READ | BT_GATT_PERM_WRITE)
+#endif
+
 #define BLE_MIDI_GATT_ATTRIBUTES BT_GATT_PRIMARY_SERVICE(BT_UUID_MIDI_SERVICE), \
 		       BT_GATT_CHARACTERISTIC(BT_UUID_MIDI_CHRC, \
 					      			  BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY | \
 						      	      BT_GATT_CHRC_WRITE_WITHOUT_RESP, \
-					      			  BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, \
+					      			  BLE_MIDI_CHARACTERISTIC_PERMISSIONS, \
 									  midi_read_cb, \
 					      			  midi_write_cb, NULL), \
 		       BT_GATT_CCC(midi_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE)
@@ -349,9 +355,25 @@ static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t l
 #endif
 }
 
-BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {.connected = on_connected,
-					      .disconnected = on_disconnected,
-					      .le_param_updated = le_param_updated};
+#if CONFIG_BT_SMP
+void on_security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
+{
+	if (!err) {
+		LOG_INF("Security changed: level %u", level);
+	} else {
+		LOG_INF("Security failed: level %u err %d", level, err);
+	}
+}
+#endif
+
+BT_CONN_CB_DEFINE(ble_midi_conn_callbacks) = {
+	.connected = on_connected,
+	.disconnected = on_disconnected,
+	.le_param_updated = le_param_updated,
+#if CONFIG_BT_SMP
+	.security_changed = on_security_changed
+#endif
+};
 
 enum ble_midi_error_t ble_midi_init(struct ble_midi_callbacks *callbacks)
 {
