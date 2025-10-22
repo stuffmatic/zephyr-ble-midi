@@ -25,6 +25,7 @@ struct ble_midi_context context;
 int send_packet(uint8_t *bytes, int num_bytes);
 
 void on_ready_state_changed(ble_midi_ready_state_t state) {
+	context.ready_state = state;
 	LOG_INF("ready state: %d", state);
 	if (context.user_callbacks.ready_cb) {
 		context.user_callbacks.ready_cb(state);
@@ -60,7 +61,7 @@ static ssize_t midi_write_cb(struct bt_conn *conn, const struct bt_gatt_attr *at
 static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {	
 	int notification_enabled = value == BT_GATT_CCC_NOTIFY;
-	LOG_INF("I/O characteristic notification enabled: %d", notification_enabled);
+	LOG_INF("I/O characteristic notification enabled: %d (value %d)", notification_enabled, value);
 
 	/* MIDI I/O characteristic notification has been turned on/off.
 	   Notify the user that BLE MIDI is ready/not ready. */
@@ -289,8 +290,6 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
-	on_ready_state_changed(BLE_MIDI_STATE_CONNECTED);
-
 	int tx_running_status = 0;
 	#ifdef CONFIG_BLE_MIDI_SEND_RUNNING_STATUS
 	tx_running_status = 1;
@@ -322,6 +321,15 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		e = bt_conn_le_param_update(conn, conn_param);
 		LOG_INF("Got conn. interval %d ms, requesting interval %d ms with error %d",
 			BT_CONN_INTERVAL_TO_MS(info.le.interval), BT_CONN_INTERVAL_TO_MS(INTERVAL_MIN), e);
+	}
+
+	if (context.ready_state == BLE_MIDI_NOT_CONNECTED) {
+		// Transition to connected state if the current state is 
+		// not connected. Note: at this point the state
+		// may already be "ready", e.g when macOS reconnectes to a bonded device
+		// it seems to enable notifications before the connected callback is
+		// invoked.
+		on_ready_state_changed(BLE_MIDI_STATE_CONNECTED);
 	}
 }
 
