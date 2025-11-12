@@ -323,9 +323,9 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 			BT_CONN_INTERVAL_TO_MS(info.le.interval), BT_CONN_INTERVAL_TO_MS(INTERVAL_MIN), e);
 	}
 
-	if (context.ready_state == BLE_MIDI_NOT_CONNECTED) {
+	if (context.ready_state == BLE_MIDI_STATE_NOT_CONNECTED) {
 		// Transition to connected state if the current state is 
-		// not connected. Note: at this point the state
+		// "not connected". Note: at this point the state
 		// may already be "ready", e.g when macOS reconnectes to a bonded device
 		// it seems to enable notifications before the connected callback is
 		// invoked.
