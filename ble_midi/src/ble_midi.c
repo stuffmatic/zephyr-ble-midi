@@ -322,6 +322,9 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		LOG_INF("Got conn. interval %d ms, requesting interval %d ms with error %d",
 			BT_CONN_INTERVAL_TO_MS(info.le.interval), BT_CONN_INTERVAL_TO_MS(INTERVAL_MIN), e);
 	}
+	#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
+	conn_event_trigger_refresh_conn_interval(conn);
+	#endif
 
 	if (context.ready_state == BLE_MIDI_STATE_NOT_CONNECTED) {
 		// Transition to connected state if the current state is 
