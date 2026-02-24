@@ -14,6 +14,7 @@ static conn_event_trigger_cb_t user_callback = NULL;
 
 #include <sdc_hci_vs.h>
 #include <zephyr/bluetooth/hci.h>
+#include <bluetooth/hci_vs_sdc.h>
 #include <hal/nrf_egu.h>
 #include <nrfx_timer.h>
 #include <zephyr/kernel.h>
@@ -89,20 +90,8 @@ static void egu0_handler(const void *context)
 
 static int setup_connection_event_trigger(struct bt_conn *conn, bool enable)
 {
-	// TODO: Allow enabling/disabling connection event trigger
-	// when I/O characteristic notifications are enabled/disabled.
-	//
-	// Event trigger docs: https://github.com/nrfconnect/sdk-nrfxlib/blob/main/softdevice_controller/include/sdc_hci_vs.h
-	// <wrn> bt_hci_core: bt_hci_cmd_send_sync: opcode 0xfd13 status 0x0c (not allowed)
-	// 
-	// The code below is adapted from https://github.com/nrfconnect/sdk-nrf/blob/main/samples/bluetooth/connection_event_trigger/src/main.c
-
 	int err;
-	struct net_buf *buf;
-	/* struct net_buf *rsp = NULL;
-	sdc_hci_cmd_vs_get_next_conn_event_counter_t *cmd_get_conn_event_counter;
-	sdc_hci_cmd_vs_get_next_conn_event_counter_return_t *cmd_event_counter_return; */
-	sdc_hci_cmd_vs_set_conn_event_trigger_t *cmd_set_trigger;
+	sdc_hci_cmd_vs_set_event_start_task_t cmd_params;
 	uint16_t conn_handle;
 
 	err = bt_hci_get_conn_handle(conn, &conn_handle);
@@ -111,71 +100,34 @@ static int setup_connection_event_trigger(struct bt_conn *conn, bool enable)
 		return err;
 	}
 
-	/* buf = bt_hci_cmd_create(SDC_HCI_OPCODE_CMD_VS_GET_NEXT_CONN_EVENT_COUNTER,
-				sizeof(*cmd_get_conn_event_counter));
+	cmd_params.handle_type = SDC_HCI_VS_SET_EVENT_START_TASK_HANDLE_TYPE_CONN;
+	cmd_params.handle = conn_handle;
 
-	if (!buf) {
-		LOG_ERR("Could not allocate command buffer");
-		return -ENOMEM;
-	}
-
-	cmd_get_conn_event_counter = net_buf_add(buf, sizeof(*cmd_get_conn_event_counter));
-	cmd_get_conn_event_counter->conn_handle = conn_handle;
-
-	err = bt_hci_cmd_send_sync(SDC_HCI_OPCODE_CMD_VS_GET_NEXT_CONN_EVENT_COUNTER, buf, &rsp);
-
-	if (err) {
-		LOG_ERR("Error for command SDC_HCI_OPCODE_CMD_VS_GET_NEXT_CONN_EVENT_COUNTER (%d)",
-		       err);
-		return err;
-	} 
-
-	cmd_event_counter_return =
-		(struct hci_cmd_vs_get_next_conn_event_counter_return *)rsp->data; */
-
-	buf = bt_hci_cmd_create(SDC_HCI_OPCODE_CMD_VS_SET_CONN_EVENT_TRIGGER,
-				sizeof(*cmd_set_trigger));
-
-	if (!buf) {
-		LOG_ERR("Could not allocate command buffer");
-		return -ENOMEM;
-	}
-
-	/* Configure event trigger to trigger NRF_EGU_TASK_TRIGGER0
-	 * through (D)PPI channel PPI_CH_ID.
-	 * This will generate a software interrupt: SWI_IRQn.
+	/* Configure event task to trigger NRF_EGU_TASK_TRIGGER0.
+	 * This will generate a software interrupt.
 	 */
-
-	cmd_set_trigger = net_buf_add(buf, sizeof(*cmd_set_trigger));
-	cmd_set_trigger->conn_handle = conn_handle;
-	cmd_set_trigger->role = SDC_HCI_VS_CONN_EVENT_TRIGGER_ROLE_CONN;
-	cmd_set_trigger->ppi_ch_id = PPI_CH_ID;
-	cmd_set_trigger->period_in_events = 1;
-	cmd_set_trigger->conn_evt_counter_start = 0;
-
-	// TODO: check and at least log errors
 	if (enable) {
-		cmd_set_trigger->task_endpoint =
+		cmd_params.task_address =
 			nrf_egu_task_address_get(EGU_INSTANCE, NRF_EGU_TASK_TRIGGER0);
+
 		IRQ_DIRECT_CONNECT(SWI_IRQn, 5, egu0_handler, 0);
 		nrf_egu_int_enable(EGU_INSTANCE, NRF_EGU_INT_TRIGGERED0);
 		NVIC_EnableIRQ(SWI_IRQn);
 	} else {
-		cmd_set_trigger->task_endpoint = 0;
+		cmd_params.task_address = 0;
 		nrf_egu_int_disable(EGU_INSTANCE, NRF_EGU_INT_TRIGGERED0);
 		NVIC_DisableIRQ(SWI_IRQn);
 	}
 
-	err = bt_hci_cmd_send_sync(SDC_HCI_OPCODE_CMD_VS_SET_CONN_EVENT_TRIGGER, buf, NULL);
+	err = hci_vs_sdc_set_event_start_task(&cmd_params);
 	if (err) {
-		LOG_ERR("Error for command SDC_HCI_OPCODE_CMD_VS_SET_CONN_EVENT_TRIGGER (%d)",
+		LOG_ERR("Error for command hci_vs_sdc_set_event_start_task() (%d\n",
 		       err);
 		return err;
 	}
 
 	LOG_INF("Configured connection event trigger, enabled %d", enable);
 
-	// net_buf_unref(rsp);
 	return 0;
 }
 
