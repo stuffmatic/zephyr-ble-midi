@@ -6,11 +6,15 @@
 #include <zephyr/sys/ring_buffer.h>
 #include <ble_midi/ble_midi.h>
 
+#ifdef CONFIG_BT_SMP
+#include "ble_pairing.h"
+#endif
+
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ble_midi_sample);
 
 static void log_sysex_transfer_time(int is_tx, int num_bytes, int time_ms) {
-	float bytes_per_s = time_ms == 0 ? 0 : (float)num_bytes / (0.001 * time_ms);
+	float bytes_per_s = time_ms == 0 ? 0 : (float)num_bytes / (0.001f * time_ms);
 	LOG_INF("sysex %s done | %d bytes in %d ms | %d bytes/s", is_tx ? "tx" : "rx",
 		num_bytes, (int)time_ms, (int)bytes_per_s);
 }
@@ -236,6 +240,9 @@ int main(void)
 	}
 
 	uint32_t err = bt_enable(NULL);
+	#ifdef CONFIG_BT_SMP
+	ble_pairing_load();
+	#endif
 	__ASSERT(err == 0, "bt_enable failed");
 
 	/* Must be called after bt_enable */

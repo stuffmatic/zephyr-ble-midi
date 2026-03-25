@@ -11,3 +11,4 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ble_midi_sample)
 
 target_sources(app PRIVATE src/main.c)
+target_sources_ifdef(CONFIG_BT_SMP app PRIVATE src/ble_pairing.c)
