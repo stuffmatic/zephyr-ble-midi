@@ -1,6 +1,7 @@
 #include "ble_midi_context.h"
 
 void ble_midi_context_init(struct ble_midi_context* context) {
+    context->is_initialized = 1;
     context->user_callbacks.ready_cb = NULL;
     context->user_callbacks.midi_message_cb = NULL;
     context->user_callbacks.sysex_data_cb = NULL;

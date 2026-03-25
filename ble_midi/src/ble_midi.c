@@ -58,14 +58,19 @@ static ssize_t midi_write_cb(struct bt_conn *conn, const struct bt_gatt_attr *at
 	return len;
 }
 
+// This callback can be invoked before the connected callback when
+// stored parameters for a bonded connection are loaded when re-connecting.
+static int notify_enabled = 0;
 static void midi_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {	
-	int notification_enabled = value == BT_GATT_CCC_NOTIFY;
-	LOG_INF("I/O characteristic notification enabled: %d (value %d)", notification_enabled, value);
+	notify_enabled = value == BT_GATT_CCC_NOTIFY;
+	LOG_INF("I/O characteristic notification enabled: %d (value %d)", notify_enabled, value);
 
 	/* MIDI I/O characteristic notification has been turned on/off.
 	   Notify the user that BLE MIDI is ready/not ready. */
-	on_ready_state_changed(notification_enabled ? BLE_MIDI_STATE_READY : BLE_MIDI_STATE_CONNECTED);
+	if (context.ready_state != BLE_MIDI_STATE_NOT_CONNECTED) {
+		on_ready_state_changed(notify_enabled ? BLE_MIDI_STATE_READY : BLE_MIDI_STATE_CONNECTED);
+	}
 }
 
 #define BT_UUID_MIDI_SERVICE BT_UUID_DECLARE_128(BLE_MIDI_SERVICE_UUID)
@@ -274,6 +279,8 @@ static void on_mtu_changed(struct bt_conn *conn, uint16_t mtu_size)
 	LOG_INF("Setting tx_buf_max_size to %d (MTU is %d)", tx_buf_max_size, mtu_size);
 }
 
+// This callback can be invoked before the connected callback when
+// stored parameters for a bonded connection are loaded when re-connecting.
 static void att_mtu_updated_cb(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 {
 	LOG_INF("MTU updated: tx %d, rx %d", tx, rx);
@@ -326,14 +333,10 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 	conn_event_trigger_refresh_conn_interval(conn);
 	#endif
 
-	if (context.ready_state == BLE_MIDI_STATE_NOT_CONNECTED) {
-		// Transition to connected state if the current state is 
-		// "not connected". Note: at this point the state
-		// may already be "ready", e.g when macOS reconnectes to a bonded device
-		// it seems to enable notifications before the connected callback is
-		// invoked.
-		on_ready_state_changed(BLE_MIDI_STATE_CONNECTED);
-	}
+	// When a central reconnects to a bonded peripheral,
+	// notify may already have been enabled. Transition
+	// to the appropriate ready state.
+	on_ready_state_changed(notify_enabled ? BLE_MIDI_STATE_READY : BLE_MIDI_STATE_CONNECTED);
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
@@ -347,6 +350,8 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	#if CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT || CONFIG_BLE_MIDI_TX_MODE_CONN_EVENT_LEGACY
 	conn_event_trigger_set_enabled(conn, 0);
 	#endif
+
+	notify_enabled = 0;
 
 	/* Device disconnected. Notify the user that BLE MIDI is not available. */
 	on_ready_state_changed(BLE_MIDI_STATE_NOT_CONNECTED);
