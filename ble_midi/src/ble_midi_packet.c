@@ -189,9 +189,13 @@ enum ble_midi_packet_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *w
 		return BLE_MIDI_PACKET_ERROR_INVALID_STATUS_BYTE;
 	}
 
-	uint8_t data_bytes[2] = {message_bytes[1], message_bytes[2]};
-
-	if (!is_data_byte(data_bytes[0]) || !is_data_byte(data_bytes[1])) {
+	// make sure the data bytes (if any) are valid
+	int data_bytes_are_valid = 1;
+	for (int i = 1; i < num_message_bytes; i++) {
+		data_bytes_are_valid = data_bytes_are_valid && is_data_byte(message_bytes[i]);
+	}
+	
+	if (!data_bytes_are_valid) {
 		return BLE_MIDI_PACKET_ERROR_INVALID_DATA_BYTE;
 	}
 
@@ -205,7 +209,7 @@ enum ble_midi_packet_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *w
 			/* This is a note off message. Represent it as a note
 				on with velocity 0 to increase running status efficiency. */
 			status_byte = 0x90 | (status_byte & 0xf);
-			data_bytes[1] = 0; /* Velocity 0 */
+			message_bytes[2] = 0; /* Velocity 0 */
 		}
 
 		prev_running_status_byte = status_byte;
@@ -255,7 +259,7 @@ enum ble_midi_packet_error_t ble_midi_writer_add_msg(struct ble_midi_writer_t *w
 	/* Add data bytes */
 	uint8_t num_data_bytes = num_message_bytes - 1;
 	for (int i = 0; i < num_data_bytes; i++) {
-		bytes_to_append[num_bytes_to_append] = data_bytes[i];
+		bytes_to_append[num_bytes_to_append] = message_bytes[i + 1];
 		num_bytes_to_append++;
 	}
 

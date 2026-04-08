@@ -561,6 +561,29 @@ static void test_parse_invalid_status_in_sysex_message()
 	assert_error_code(ble_midi_parse_packet(payload, sizeof(payload), &ble_midi_parse_cb), BLE_MIDI_PACKET_ERROR_INVALID_STATUS_BYTE);
 }
 
+static void test_rt_msg_junk_byte_bug_fix() {
+	printf("test_rt_msg_junk_byte_bug_fix \n\n");
+
+	// This test case covers a bug fix where the second byte of single byte 
+	// real time messages was erroneously read, causing ble_midi_writer_add_msg
+	// to return an error on invalid input.
+	struct ble_midi_writer_t writer;
+	ble_midi_writer_init(&writer, 0, 0);
+	// The second byte in this message should not matter, since
+	// the message length implied by 0xfa is one.
+	uint8_t rt_msg_with_junk_byte[3] = {0xfa, 0xff, 0xff};
+	enum ble_midi_packet_error_t result = ble_midi_writer_add_msg(&writer, rt_msg_with_junk_byte, 0);
+	assert_error_code(result, BLE_MIDI_PACKET_SUCCESS);
+
+	ble_midi_writer_init(&writer, 0, 0);
+	uint8_t broken_song_select[2] = { 0xf3, 0xff };
+	assert_error_code(ble_midi_writer_add_msg(&writer, broken_song_select, 0), BLE_MIDI_PACKET_ERROR_INVALID_DATA_BYTE);
+
+	ble_midi_writer_init(&writer, 0, 0);
+	uint8_t broken_cc[3] = { 0xb0, 0x07, 0xff };
+	assert_error_code(ble_midi_writer_add_msg(&writer, broken_cc, 0), BLE_MIDI_PACKET_ERROR_INVALID_DATA_BYTE);
+}
+
 int main(int argc, char *argv[])
 {
 	test_timestamp_byte_wrapping();
@@ -579,6 +602,7 @@ int main(int argc, char *argv[])
 	test_parse_malformed_sysex_message();
 	test_parse_invalid_status_in_sysex_message();
 	test_null_parse_callbacks();
+	test_rt_msg_junk_byte_bug_fix();
 
 	printf("");
 	if (num_failed_assertions == 0) {
